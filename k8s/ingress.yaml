@@ -1,0 +1,17 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: stiva-browser
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: stiva.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: stiva-browser
+                port:
+                  number: 3000

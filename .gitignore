@@ -1,0 +1,26 @@
+# Dependencies and local caches
+node_modules/
+.npm-cache/
+.vite/
+
+# Build output
+dist/
+*.tsbuildinfo
+
+# Runtime data and local environment settings
+data/
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Test output
+coverage/
+playwright-report/
+test-results/
+blob-report/
+
+# Logs and operating system files
+*.log
+.DS_Store
+Thumbs.db
