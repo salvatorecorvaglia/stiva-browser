@@ -13,134 +13,15 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  verify:
-    name: CI
-    uses: ./.github/workflows/ci.yml
-
-  build:
-    name: Build and test (${{ matrix.arch }})
-    needs: verify
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: amd64
-            runner: ubuntu-24.04
-          - arch: arm64
-            runner: ubuntu-24.04-arm
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 25
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v6
-        with:
-          persist-credentials: false
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: 24
-
-      - name: Prepare image names and validate version
-        id: image
-        env:
-          RELEASE_TAG: ${{ github.ref_name }}
-        run: |
-          node --input-type=module <<'NODE'
-          import { readFileSync, appendFileSync } from 'node:fs';
-          const { version } = JSON.parse(readFileSync('package.json', 'utf8'));
-          if (process.env.RELEASE_TAG !== `v${version}`) throw new Error('Release tag must match package.json version.');
-          appendFileSync(process.env.GITHUB_OUTPUT, `ghcr=ghcr.io/${process.env.GITHUB_REPOSITORY.toLowerCase()}\n`);
-          NODE
-
-      - name: Set up Docker with containerd
-        uses: docker/setup-docker-action@v5
-        with:
-          daemon-config: |
-            { "features": { "containerd-snapshotter": true } }
-
-      - name: Set up Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Generate image labels
-        id: meta
-        uses: docker/metadata-action@v6
-        with:
-          images: corvaglia91/stiva-browser
-          tags: type=semver,pattern={{version}}
-
-      # Each platform builds and runs its smoke test on matching hardware.
-      - name: Build and load native image
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          platforms: linux/${{ matrix.arch }}
-          load: true
-          tags: |
-            corvaglia91/stiva-browser:build-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.arch }}
-            ${{ steps.image.outputs.ghcr }}:build-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.arch }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=release-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=release-${{ matrix.arch }}
-          provenance: mode=max
-          sbom: true
-
-      - name: Test native release image
-        env:
-          CONTAINER_IMAGE: corvaglia91/stiva-browser:build-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.arch }}
-          CONTAINER_PLATFORM: linux/${{ matrix.arch }}
-        run: node tests/container-smoke.mjs
-
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v4
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ github.token }}
-
-      - name: Push tested images and record immutable references
-        env:
-          GHCR_IMAGE: ${{ steps.image.outputs.ghcr }}
-          BUILD_TAG: build-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.arch }}
-          ARCH: ${{ matrix.arch }}
-        run: |
-          mkdir -p "$RUNNER_TEMP/digests"
-          for image in corvaglia91/stiva-browser "$GHCR_IMAGE"; do
-            docker push "$image:$BUILD_TAG"
-            ref=$(docker image inspect "$image:$BUILD_TAG" --format '{{range .RepoDigests}}{{println .}}{{end}}' | awk -v prefix="$image@" 'index($0, prefix) == 1 { print; exit }')
-            test -n "$ref"
-            registry=hub
-            if [[ "$image" == ghcr.io/* ]]; then registry=ghcr; fi
-            echo "$ref" > "$RUNNER_TEMP/digests/$registry-$ARCH.txt"
-          done
-
-      - name: Upload tested image references
-        uses: actions/upload-artifact@v4
-        with:
-          name: image-digests-${{ matrix.arch }}
-          path: ${{ runner.temp }}/digests/*.txt
-          retention-days: 1
-
-  release:
-    name: Publish release
-    needs: build
+  preflight:
+    name: Validate release prerequisites
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    permissions:
-      contents: write
-      packages: write
+    timeout-minutes: 5
+    outputs:
+      image: ${{ steps.version.outputs.image }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
     env:
       RELEASE_TAG: ${{ github.ref_name }}
-
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
@@ -189,11 +70,148 @@ jobs:
           test "$DOCKERHUB_USERNAME" = corvaglia91 || { echo "Set DOCKERHUB_USERNAME to corvaglia91."; exit 1; }
           test -n "$DOCKERHUB_TOKEN" || { echo "DOCKERHUB_TOKEN is required."; exit 1; }
 
+      - name: Upload release notes
+        uses: actions/upload-artifact@v6
+        with:
+          name: release-notes
+          path: ${{ runner.temp }}/release-notes.md
+          if-no-files-found: error
+          retention-days: 1
+
+  verify:
+    name: CI
+    needs: preflight
+    uses: ./.github/workflows/ci.yml
+
+  build:
+    name: Build and test (${{ matrix.arch }})
+    needs: [preflight, verify]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Set up Docker with containerd
+        uses: docker/setup-docker-action@v5
+        with:
+          daemon-config: |
+            { "features": { "containerd-snapshotter": true } }
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Generate image labels
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: corvaglia91/stiva-browser
+          tags: type=semver,pattern={{version}}
+
+      # Each platform builds and runs its smoke test on matching hardware.
+      - name: Build and load native image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/${{ matrix.arch }}
+          load: true
+          tags: |
+            corvaglia91/stiva-browser:build-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.arch }}
+            ${{ needs.preflight.outputs.image }}:build-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.arch }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=release-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=release-${{ matrix.arch }}
+          provenance: mode=max
+          sbom: true
+
+      - name: Test native release image
+        env:
+          CONTAINER_IMAGE: corvaglia91/stiva-browser:build-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.arch }}
+          CONTAINER_PLATFORM: linux/${{ matrix.arch }}
+        run: node tests/container-smoke.mjs
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Push tested images and record immutable references
+        env:
+          GHCR_IMAGE: ${{ needs.preflight.outputs.image }}
+          BUILD_TAG: build-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.arch }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/digests"
+          for image in corvaglia91/stiva-browser "$GHCR_IMAGE"; do
+            docker push "$image:$BUILD_TAG"
+            ref=$(docker image inspect "$image:$BUILD_TAG" --format '{{range .RepoDigests}}{{println .}}{{end}}' | awk -v prefix="$image@" 'index($0, prefix) == 1 { print; exit }')
+            test -n "$ref"
+            registry=hub
+            if [[ "$image" == ghcr.io/* ]]; then registry=ghcr; fi
+            echo "$ref" > "$RUNNER_TEMP/digests/$registry-$ARCH.txt"
+          done
+
+      - name: Upload tested image references
+        uses: actions/upload-artifact@v6
+        with:
+          name: image-digests-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/*.txt
+          retention-days: 1
+
+  release:
+    name: Publish release
+    needs: [preflight, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      packages: write
+    env:
+      RELEASE_TAG: ${{ github.ref_name }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Download release notes
+        uses: actions/download-artifact@v7
+        with:
+          name: release-notes
+          path: ${{ runner.temp }}
+
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v4
 
       - name: Download tested image references
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           pattern: image-digests-*
           path: ${{ runner.temp }}/digests
@@ -205,12 +223,12 @@ jobs:
         with:
           images: |
             corvaglia91/stiva-browser
-            ${{ steps.version.outputs.image }}
+            ${{ needs.preflight.outputs.image }}
           flavor: latest=false
           tags: |
             type=semver,pattern={{version}}
             type=raw,value=${{ env.RELEASE_TAG }}
-            type=raw,value=latest,enable=${{ steps.version.outputs.prerelease == 'false' }}
+            type=raw,value=latest,enable=${{ needs.preflight.outputs.prerelease == 'false' }}
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v4
@@ -242,7 +260,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          PRERELEASE: ${{ steps.version.outputs.prerelease }}
+          PRERELEASE: ${{ needs.preflight.outputs.prerelease }}
         run: |
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             echo "Release $RELEASE_TAG already exists."
