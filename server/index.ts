@@ -6,7 +6,7 @@ import { createApp } from "./app.js";
 const directory = path.resolve(process.env.DATA_DIR ?? "./data");
 const port = Number(process.env.PORT ?? 3000);
 try {
-  const store = await Store.open(directory);
+  const store = await Store.open(directory, process.env.DB_URI);
   const app = createApp(store, {
     staticDirectory: path.resolve(
       path.dirname(fileURLToPath(import.meta.url)),

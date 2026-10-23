@@ -143,13 +143,16 @@ test("empty workspace, server CRUD, bucket and folder navigation, search and saf
   await expect(page.getByText("Hello Stiva!", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Metadata", exact: true }).click();
   await expect(page.getByText("text/plain", { exact: true })).toBeVisible();
-  await page.getByRole("dialog").getByRole("button", { name: "Copy presigned URL" }).click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Copy presigned URL" })
+    .click();
   await expect(
     page.getByRole("dialog", { name: "Presigned download URL" }),
   ).toBeVisible();
-  await expect(page.getByRole("textbox", { name: "Download URL", exact: true })).toHaveValue(
-    "http://127.0.0.1:4173/example-signed-download",
-  );
+  await expect(
+    page.getByRole("textbox", { name: "Download URL", exact: true }),
+  ).toHaveValue("http://127.0.0.1:4173/example-signed-download");
   await expect(
     page.getByRole("link", { name: "Open download" }),
   ).toHaveAttribute("href", "http://127.0.0.1:4173/example-signed-download");
@@ -372,4 +375,209 @@ test("failed direct upload offers an explicit backend retry", async ({
     page.getByText("Upload complete", { exact: true }),
   ).toBeVisible();
   expect(proxyRequests).toBe(1);
+});
+
+test("recursive folder deletion requires a reviewed preview and exact confirmation", async ({
+  page,
+}) => {
+  await page.request.post("/api/servers", {
+    data: {
+      name: "Folder fixture",
+      endpoint_url: "http://127.0.0.1:9000",
+      region: "us-east-1",
+      access_key: "fixture",
+      secret_key: "fixture-secret",
+      force_path_style: true,
+    },
+  });
+  await page.route(
+    "**/api/buckets/project-assets/folders/delete-preview?*",
+    (route) =>
+      route.fulfill({
+        json: {
+          preview_token: "8b962ad9-ed10-4ba9-a19f-9d30b0d4ef11",
+          prefix: "documents/",
+          count: 2,
+          size: 1024,
+          sample: ["documents/a.txt", "documents/nested/b.txt"],
+          expires_at: new Date(Date.now() + 300000).toISOString(),
+        },
+      }),
+  );
+  let deletion: any;
+  await page.route("**/api/buckets/project-assets/folders", (route) => {
+    deletion = route.request().postDataJSON();
+    return route.fulfill({
+      json: {
+        deleted: ["documents/a.txt", "documents/nested/b.txt"],
+        errors: [],
+      },
+    });
+  });
+  await page.goto("/");
+  await page
+    .getByRole("navigation", { name: "Buckets" })
+    .getByRole("button", { name: "project-assets" })
+    .click();
+  await page
+    .getByRole("button", {
+      name: "Delete folder and contents documents/",
+      exact: true,
+    })
+    .click();
+  const dialog = page.getByRole("dialog", {
+    name: "Delete folder and contents?",
+  });
+  await expect(dialog.getByText("2 objects", { exact: true })).toBeVisible();
+  await expect(
+    dialog.getByText("documents/nested/b.txt", { exact: true }),
+  ).toBeVisible();
+  const remove = dialog.getByRole("button", {
+    name: "Delete folder contents",
+    exact: true,
+  });
+  await expect(remove).toBeDisabled();
+  await dialog
+    .getByLabel("Type the complete folder prefix to confirm")
+    .fill("documents");
+  await expect(remove).toBeDisabled();
+  await dialog
+    .getByLabel("Type the complete folder prefix to confirm")
+    .fill("documents/");
+  await remove.click();
+  await expect(dialog).not.toBeVisible();
+  expect(deletion).toEqual({
+    prefix: "documents/",
+    confirmation: "documents/",
+    preview_token: "8b962ad9-ed10-4ba9-a19f-9d30b0d4ef11",
+  });
+});
+
+test("version history restores data and permanently removes a marker with typed confirmation", async ({
+  page,
+}) => {
+  await page.request.post("/api/servers", {
+    data: {
+      name: "Version fixture",
+      endpoint_url: "http://127.0.0.1:9000",
+      region: "us-east-1",
+      access_key: "fixture",
+      secret_key: "fixture-secret",
+      force_path_style: true,
+    },
+  });
+  let versions = [
+    {
+      key: "hello.txt",
+      version_id: "v1",
+      is_latest: false,
+      is_delete_marker: false,
+      size: 12,
+      last_modified: "2026-10-20T10:00:00Z",
+    },
+    {
+      key: "hello.txt",
+      version_id: "marker",
+      is_latest: true,
+      is_delete_marker: true,
+      size: 0,
+      last_modified: "2026-10-21T10:00:00Z",
+    },
+  ];
+  await page.route("**/api/buckets/project-assets/versions?*", (route) =>
+    route.fulfill({
+      json: { versions, next_key_marker: null, next_version_id_marker: null },
+    }),
+  );
+  let restored = false;
+  await page.route(
+    "**/api/buckets/project-assets/versions/restore",
+    (route) => {
+      const body = route.request().postDataJSON();
+      expect(body).toEqual({
+        key: "hello.txt",
+        versionId: "v1",
+        confirmation: "hello.txt",
+      });
+      restored = true;
+      versions = versions.map((version) => ({ ...version, is_latest: false }));
+      versions.push({
+        key: "hello.txt",
+        version_id: "restored",
+        is_latest: true,
+        is_delete_marker: false,
+        size: 12,
+        last_modified: "2026-10-23T10:00:00Z",
+      });
+      return route.fulfill({
+        status: 201,
+        json: { key: "hello.txt", version_id: "restored" },
+      });
+    },
+  );
+  await page.route("**/api/buckets/project-assets/versions", (route) => {
+    const body = route.request().postDataJSON();
+    expect(body.versionId).toBe("marker");
+    expect(body.confirmation).toBe("hello.txt");
+    versions = versions.filter((version) => version.version_id !== "marker");
+    return route.fulfill({
+      json: { deleted: true, key: "hello.txt", version_id: "marker" },
+    });
+  });
+  await page.goto("/");
+  await page
+    .getByRole("navigation", { name: "Buckets" })
+    .getByRole("button", { name: "project-assets" })
+    .click();
+  await page.getByRole("button", { name: "Versions", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Object versions" });
+  await expect(
+    dialog.getByText("Delete marker", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    dialog.getByRole("link", { name: "Download version v1", exact: true }),
+  ).toHaveAttribute("href", /versionId=v1/);
+  await dialog
+    .getByRole("button", { name: "Restore version v1", exact: true })
+    .click();
+  const restore = dialog.getByRole("button", {
+    name: "Restore version",
+    exact: true,
+  });
+  await expect(restore).toBeDisabled();
+  await dialog
+    .getByLabel("Type the complete object key to confirm")
+    .fill("hello.txt");
+  await restore.click();
+  await expect(
+    dialog.getByText(
+      "Restored as a new current version. Previous versions were retained.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  expect(restored).toBe(true);
+  await dialog
+    .getByRole("button", {
+      name: "Permanently delete version marker",
+      exact: true,
+    })
+    .click();
+  await expect(
+    dialog.getByText(
+      "Removing a delete marker may make an earlier version visible again.",
+      { exact: false },
+    ),
+  ).toBeVisible();
+  await dialog
+    .getByLabel("Type the complete object key to confirm")
+    .fill("hello.txt");
+  await dialog
+    .getByRole("button", { name: "Permanently delete version", exact: true })
+    .click();
+  await expect(
+    dialog.getByText("Version permanently deleted.", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    dialog.getByText("Delete marker", { exact: true }),
+  ).not.toBeVisible();
 });

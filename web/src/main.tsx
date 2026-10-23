@@ -21,6 +21,7 @@ import {
   Folder,
   FolderPlus,
   HardDrive,
+  History,
   Info,
   LoaderCircle,
   Menu,
@@ -49,10 +50,14 @@ import {
   type Signed,
 } from "./api";
 import "./styles.css";
+import { Dialog } from "./Dialog";
+import { FolderDeleteModal, VersionsModal } from "./ObjectTools";
 
 type Notice = { text: string; error?: boolean };
 type Modal =
   | { type: "folder" }
+  | { type: "folder-delete"; prefix: string }
+  | { type: "versions"; key?: string }
   | { type: "delete"; keys: string[] }
   | { type: "inspect"; object: S3Object; preview: boolean }
   | { type: "link"; signed: Signed }
@@ -731,6 +736,13 @@ function App() {
                   )}
                 </div>
                 <div className="toolbar-actions">
+                  <button
+                    className="button secondary"
+                    onClick={() => setModal({ type: "versions" })}
+                  >
+                    <History size={15} />
+                    <span>Versions</span>
+                  </button>
                   {selected.size > 0 && (
                     <button
                       className="button danger subtle"
@@ -873,9 +885,12 @@ function App() {
                             <div className="row-actions">
                               <button
                                 className="icon-button delete-action"
-                                title={`Delete folder marker ${key}`}
+                                title={`Delete folder and contents ${key}`}
                                 onClick={() =>
-                                  setModal({ type: "delete", keys: [key] })
+                                  setModal({
+                                    type: "folder-delete",
+                                    prefix: key,
+                                  })
                                 }
                               >
                                 <Trash2 size={14} />
@@ -1163,6 +1178,34 @@ function App() {
           notify={notify}
         />
       )}
+      {modal?.type === "folder-delete" && (
+        <FolderDeleteModal
+          serverId={serverId}
+          bucket={bucket}
+          prefix={modal.prefix}
+          onClose={() => setModal(null)}
+          onComplete={(deleted, errors) => {
+            setModal(null);
+            refresh();
+            notify(
+              errors.length
+                ? `${deleted} deleted; ${errors.length} failed. ${errors.slice(0, 3).join(", ")}${errors.length > 3 ? "…" : ""}`
+                : `${deleted} objects deleted`,
+              errors.length > 0,
+            );
+          }}
+        />
+      )}
+      {modal?.type === "versions" && (
+        <VersionsModal
+          serverId={serverId}
+          bucket={bucket}
+          prefix={prefix}
+          objectKey={modal.key}
+          onClose={() => setModal(null)}
+          onChange={refresh}
+        />
+      )}
       {modal?.type === "folder" && (
         <FolderModal
           onClose={() => setModal(null)}
@@ -1217,6 +1260,9 @@ function App() {
           preview={modal.preview}
           onClose={() => setModal(null)}
           onCopy={() => void signed(modal.object)}
+          onVersions={() =>
+            setModal({ type: "versions", key: modal.object.key })
+          }
         />
       )}
       {modal?.type === "link" && (
@@ -1291,97 +1337,6 @@ function FileIcon({ name }: { name: string }) {
         <File size={18} />
       )}
     </span>
-  );
-}
-
-function Dialog({
-  title,
-  subtitle,
-  children,
-  onClose,
-  wide = false,
-}: {
-  title: string;
-  subtitle?: string;
-  children: React.ReactNode;
-  onClose: () => void;
-  wide?: boolean;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  const close = useRef(onClose);
-  close.current = onClose;
-  useEffect(() => {
-    const previous = document.activeElement as HTMLElement;
-    const root = ref.current!;
-    root.focus();
-    const handle = (event: KeyboardEvent) => {
-      if (event.key === "Escape") close.current();
-      if (event.key !== "Tab") return;
-      const elements = [
-        ...root.querySelectorAll<HTMLElement>(
-          'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea, a[href], [tabindex="0"]',
-        ),
-      ];
-      const first = elements[0];
-      const last = elements[elements.length - 1];
-      if (!first) {
-        event.preventDefault();
-        return;
-      }
-      if (
-        event.shiftKey &&
-        (document.activeElement === first || document.activeElement === root)
-      ) {
-        event.preventDefault();
-        last.focus();
-      } else if (
-        !event.shiftKey &&
-        (document.activeElement === last || document.activeElement === root)
-      ) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-    document.addEventListener("keydown", handle);
-    const overflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.removeEventListener("keydown", handle);
-      document.body.style.overflow = overflow;
-      previous?.focus();
-    };
-  }, []);
-  return (
-    <div
-      className="modal-backdrop"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
-    >
-      <div
-        ref={ref}
-        className={`modal ${wide ? "wide" : ""}`}
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-        tabIndex={-1}
-      >
-        <div className="modal-heading">
-          <div>
-            <h2>{title}</h2>
-            {subtitle && <p>{subtitle}</p>}
-          </div>
-          <button
-            className="icon-button"
-            aria-label="Close dialog"
-            onClick={onClose}
-          >
-            <X size={20} />
-          </button>
-        </div>
-        {children}
-      </div>
-    </div>
   );
 }
 
@@ -1828,8 +1783,8 @@ function DeleteModal({
           ))}
         </div>
         <p className="muted">
-          On versioned buckets, S3 versioning rules apply. Folder contents are
-          never deleted recursively.
+          On versioned buckets, S3 versioning rules apply. This action deletes
+          only the selected keys.
         </p>
         {error && (
           <p className="error-text" role="alert">
@@ -1868,6 +1823,7 @@ function InspectModal({
   preview,
   onClose,
   onCopy,
+  onVersions,
 }: {
   serverId: string;
   bucket: string;
@@ -1875,6 +1831,7 @@ function InspectModal({
   preview: boolean;
   onClose: () => void;
   onCopy: () => void;
+  onVersions: () => void;
 }) {
   const [metadata, setMetadata] = useState<Metadata | null>(null);
   const [error, setError] = useState("");
@@ -2013,6 +1970,10 @@ function InspectModal({
         )}
       </div>
       <div className="inspect-footer">
+        <button className="button secondary" onClick={onVersions}>
+          <History size={15} />
+          Versions
+        </button>
         <button className="button secondary" onClick={onCopy}>
           <Copy size={15} />
           Copy presigned URL

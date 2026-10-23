@@ -1,12 +1,12 @@
 # Stiva Browser
 
-A shared internal dashboard for AWS S3, MinIO, and other S3-compatible servers. Built with Express, React, Tailwind CSS, AWS SDK v3, and SQLite. All server configurations are managed through the UI or REST API. S3 credentials are never loaded from environment variables or Kubernetes Secrets.
+**A shared internal dashboard for AWS S3, MinIO, and other S3-compatible servers**
+
+**Stiva Browser** is a self-hosted web dashboard for managing files on AWS S3, MinIO, and other S3-compatible storage servers
 
 ## Run locally
 
 Requires Node.js 24 or later.
-
-The project uses an ignored `.npm-cache/` directory for npm downloads, avoiding permission problems from root-owned files in the shared user cache. Run npm commands as your normal user.
 
 ```sh
 npm ci
@@ -22,7 +22,22 @@ npm run build
 npm start
 ```
 
-Production serves both the dashboard and API at http://localhost:3000. Runtime settings are `PORT` (default `3000`) and `DATA_DIR` (default `./data`). The SQLite file and encryption key live in the data directory. PostgreSQL/`DB_URI` is not implemented.
+Production serves both the dashboard and API at http://localhost:3000. Runtime settings are `PORT` (default `3000`), `DATA_DIR` (default `./data`), and optional `DB_URI` for PostgreSQL. Without `DB_URI`, SQLite is used. The encryption key always remains in the data directory, including with PostgreSQL.
+
+## PostgreSQL and migration
+
+Set `DB_URI` to a `postgresql://` or `postgres://` connection URI before starting the server. Use a dedicated database and a database account that can run the initial schema migrations. PostgreSQL connection and TLS options follow the `pg` driver's URI configuration. S3 credentials remain encrypted in the database and are still entered through the UI; `DB_URI` contains database connection settings only.
+
+Keep `/data` persisted when using PostgreSQL: losing `master.key` still prevents decryption. Continue using one application replica unless all instances are provisioned with the same key and appropriate shared storage. Deletion previews are process-local and expire on restart.
+
+To move an existing SQLite installation to an **empty** PostgreSQL database:
+
+1. Stop the application and back up the existing data directory.
+2. Set `DATA_DIR` to that directory and `DB_URI` to the destination database.
+3. Run `npm run build`, then `node dist/server/migrate.js` (inside Docker, use the same image, environment, and data mount, overriding the command).
+4. Start the application with `DB_URI` and the same `DATA_DIR`.
+
+The migration copies encrypted records in a transaction, retains their IDs and timestamps, and does not delete SQLite or replace the key. It refuses a nonempty destination. Selecting PostgreSQL without running this migration opens a separate database; configurations are not transferred automatically. For PostgreSQL backups, retain a database backup such as `pg_dump` **and** the matching master key.
 
 ## Access model
 
@@ -37,8 +52,9 @@ This deployment is a shared workspace, as selected during planning. There are no
 - Proxy uploads stream with bounded memory and multipart cleanup. Direct PUT uploads are limited by your provider's single-PUT limits; use proxy mode for large objects. Configure ingress upload limits and timeouts for your expected files.
 - Text previews show at most 1 MiB. Raster image previews are limited to 1 MiB. HTML and SVG are never rendered inline. Preview is intentionally unavailable for other formats.
 - Search filters the current page. Counters and sizes describe that page, not the entire bucket.
-- Deletion uses normal S3 semantics, including delete markers for versioned buckets. It does not purge object versions or recursively delete folders. Folder markers are ordinary zero-byte keys ending in `/`; S3 folders disappear from navigation when their last object is removed.
-- Static long-lived S3 credentials are supported. Session tokens, bucket creation, ACL editing, version history, and lifecycle management are outside this version.
+- Deletion uses normal S3 semantics, including delete markers for versioned buckets. Folder rows offer recursive deletion with an object-count/size preview and exact typed prefix confirmation. A preview covers at most 10,000 current objects, expires after five minutes, is bound to the selected server configuration, and can be submitted once. Only keys captured in that preview are deleted; keys added afterward are excluded. Existing keys overwritten after preview are still addressed by their key, so avoid concurrent writers during deletion. Partial failures are reported, and historical versions are retained. Split larger folders into smaller subfolders.
+- **Versions** lists historical data and delete markers for the current location, including objects hidden from the normal listing. Search by exact object key, load more history, download old versions, restore an old version as a new current version, or permanently delete a specific version/marker. Restore and permanent deletion require typing the complete key. Deleting the current delete marker can make older contents visible again. Version permissions and S3 Object Lock rules still apply. Restore uses server-side copy, including bounded multipart copy for objects larger than 5 GiB; multipart restore preserves metadata and tags and cleans up failed copies.
+- Static long-lived S3 credentials are supported. Session tokens, bucket creation, ACL editing, and lifecycle management are outside this version. Authentication changes and deployment to a live Kubernetes cluster remain deferred at your request.
 
 Example development-only bucket CORS policy (replace the origin in production):
 
@@ -104,6 +120,18 @@ JSON errors have `{ "error": { "code": "…", "message": "…" } }`. Server resp
 | GET    | `/api/stream/download`                  | Query `bucket`, `key`; optional `preview=true` for bounded safe previews                              |
 | PUT    | `/api/stream/upload`                    | Query `bucket`, `key`; raw file body and its Content-Type                                             |
 
+Additional object-management routes:
+
+| Method | Route                                         | Input / behavior                                                                                                              |
+| ------ | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/buckets/:bucket/folders/delete-preview` | Query `prefix` ending in `/`; returns count, size, sample, `preview_token`, and expiration                                    |
+| DELETE | `/api/buckets/:bucket/folders`                | JSON `prefix`, `confirmation` matching the complete prefix, and `preview_token`; returns deleted keys and individual failures |
+| GET    | `/api/buckets/:bucket/versions`               | Query `prefix` or exact `key`; optional `keyMarker` and `versionIdMarker`; returns versions, delete markers, and next markers |
+| DELETE | `/api/buckets/:bucket/versions`               | JSON `key`, `versionId`, `confirmation` matching the complete key; permanently deletes that version or marker                 |
+| POST   | `/api/buckets/:bucket/versions/restore`       | Same JSON; copies that historical version into a new current version                                                          |
+
+Metadata, backend download/preview, and presigned download routes also accept an optional `versionId`. Uploads always create a new current version and reject `versionId` in presigning requests. Historical versions cannot be overwritten in place.
+
 All bucket/object/transfer routes require `x-s3-server-id: <id>` or `?serverId=<id>`. Conflicting identifiers are rejected. URL-encode bucket names and keys. HTTP(S) endpoints may include a base path but cannot embed credentials, query strings, or fragments.
 
 ## Verification
@@ -113,3 +141,7 @@ All bucket/object/transfer routes require `x-s3-server-id: <id>` or `?serverId=<
 `npm run test:browser` runs Chromium UI checks using mocked S3 responses and a real local backend/database. Install the browser once with `npx playwright install chromium`. Browser test data lives in ignored `test-results/`.
 
 After building `stiva-browser:1.0.0`, `node tests/container-smoke.mjs` verifies the image's non-root user, read-only root filesystem, static UI, encrypted database, and restart persistence. It creates and removes its own disposable container and volume.
+
+`node tests/run-postgres.mjs` runs migration, encryption, CRUD, and restart checks using a disposable `postgres:17-alpine` Docker container. It uses a temporary loopback-only fixture database with trust authentication, then removes the container and its in-memory database; this is not a production database configuration.
+
+For versioning integration tests, point `STIVA_TEST_VERSIONED_S3` at a disposable S3-compatible endpoint supporting bucket versioning, and provide the test access/secret keys above. Run `node --import tsx --test tests/versions-live.test.ts`. The test creates and removes its own versioned bucket, verifies pagination and restore, and cleans up its versions and delete markers. Large multipart-copy ranges and failure cleanup are verified with API-level fixtures without allocating multi-gigabyte test objects. For external PostgreSQL tests, `STIVA_TEST_DB_URI` must identify an empty disposable database.

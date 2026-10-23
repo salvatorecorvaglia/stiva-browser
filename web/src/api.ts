@@ -37,6 +37,20 @@ export interface Signed {
   expires_at: string;
   required_headers: Record<string, string>;
 }
+export interface ObjectVersion {
+  key: string;
+  version_id: string;
+  is_latest: boolean;
+  is_delete_marker: boolean;
+  size: number;
+  last_modified?: string;
+  etag?: string;
+}
+export interface VersionListing {
+  versions: ObjectVersion[];
+  next_key_marker: string | null;
+  next_version_id_marker: string | null;
+}
 
 export async function api<T>(
   url: string,
@@ -62,8 +76,9 @@ export const streamUrl = (
   bucket: string,
   key: string,
   preview = false,
+  versionId?: string,
 ) =>
-  `/api/stream/download?${new URLSearchParams({ serverId, bucket, key, ...(preview ? { preview: "true" } : {}) })}`;
+  `/api/stream/download?${new URLSearchParams({ serverId, bucket, key, ...(preview ? { preview: "true" } : {}), ...(versionId ? { versionId } : {}) })}`;
 export const bytes = (size: number) => {
   if (!size) return "0 B";
   const unit = Math.min(Math.floor(Math.log(size) / Math.log(1024)), 4);

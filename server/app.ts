@@ -5,6 +5,7 @@ import express, {
 } from "express";
 import helmet from "helmet";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { z, ZodError } from "zod";
@@ -22,22 +23,18 @@ import { Upload } from "@aws-sdk/lib-storage";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { Store, serverInput, type ServerInput } from "./store.js";
 import { makeS3 } from "./s3.js";
-
-class HttpError extends Error {
-  constructor(
-    public status: number,
-    message: string,
-  ) {
-    super(message);
-  }
-}
+import { HttpError } from "./errors.js";
+import { registerObjectTools } from "./object-tools.js";
 const keySchema = z
   .string()
   .min(1)
   .max(1024)
   .refine((key) => Buffer.byteLength(key) <= 1024, "Key exceeds 1024 bytes");
 const objectInput = z.object({ bucket: z.string().min(1), key: keySchema });
-const signingInput = objectInput.extend({
+const versionedObjectInput = objectInput.extend({
+  versionId: z.string().min(1).max(2048).optional(),
+});
+const signingInput = versionedObjectInput.extend({
   expiresIn: z.number().int().min(60).max(3600).default(900),
   contentType: z.string().max(256).optional(),
 });
@@ -50,6 +47,7 @@ export function createApp(
 ) {
   const app = express();
   const factory = options.clientFactory ?? makeS3;
+  const clientScopes = new WeakMap<S3Client, string>();
   app.disable("x-powered-by");
   app.use(
     helmet({
@@ -98,10 +96,15 @@ export function createApp(
     if (!id) throw new HttpError(400, "Select an S3 server");
     const row = await store.row(id);
     if (!row) throw new HttpError(404, "S3 server not found");
-    return factory(
+    const client = factory(
       { ...row, force_path_style: Boolean(row.force_path_style) },
       store.credentials(row),
     );
+    clientScopes.set(
+      client,
+      createHash("sha256").update(JSON.stringify(row)).digest("hex"),
+    );
+    return client;
   }
   async function using<T>(req: Request, run: (client: S3Client) => Promise<T>) {
     const client = await selected(req);
@@ -124,6 +127,12 @@ export function createApp(
       );
     return { input, existing };
   }
+  registerObjectTools(
+    app,
+    using,
+    (req) => req.get("x-s3-server-id") || parameter(req.query.serverId),
+    (client) => clientScopes.get(client)!,
+  );
   app.get("/api/servers", async (_req, res) => {
     res.json(await store.list());
   });
@@ -219,6 +228,12 @@ export function createApp(
         new HeadObjectCommand({
           Bucket: parameter(req.params.bucket),
           Key: keySchema.parse(req.query.key),
+          VersionId: z
+            .string()
+            .min(1)
+            .max(2048)
+            .optional()
+            .parse(req.query.versionId),
         }),
       ),
     );
@@ -234,11 +249,17 @@ export function createApp(
   for (const direction of ["download", "upload"] as const) {
     app.post(`/api/presigned-url/${direction}`, async (req, res) => {
       const input = signingInput.parse(req.body);
+      if (direction === "upload" && input.versionId)
+        throw new HttpError(
+          400,
+          "Uploads create a new version; versionId is only supported for downloads",
+        );
       const command =
         direction === "download"
           ? new GetObjectCommand({
               Bucket: input.bucket,
               Key: input.key,
+              VersionId: input.versionId,
               ResponseContentDisposition: disposition(input.key),
             })
           : new PutObjectCommand({
@@ -324,7 +345,7 @@ export function createApp(
   });
 
   app.get("/api/stream/download", async (req, res) => {
-    const input = objectInput.parse(req.query);
+    const input = versionedObjectInput.parse(req.query);
     const preview = req.query.preview === "true";
     await using(req, async (client) => {
       const controller = new AbortController();
@@ -337,6 +358,7 @@ export function createApp(
           new GetObjectCommand({
             Bucket: input.bucket,
             Key: input.key,
+            VersionId: input.versionId,
             ...(preview ? { Range: "bytes=0-1048575" } : {}),
           }),
           { abortSignal: controller.signal },
@@ -446,16 +468,14 @@ export function createApp(
         return;
       }
       if (error instanceof ZodError) {
-        res
-          .status(400)
-          .json({
-            error: {
-              code: "VALIDATION_ERROR",
-              message: error.issues
-                .map((i) => `${i.path.join(".") || "input"}: ${i.message}`)
-                .join("; "),
-            },
-          });
+        res.status(400).json({
+          error: {
+            code: "VALIDATION_ERROR",
+            message: error.issues
+              .map((i) => `${i.path.join(".") || "input"}: ${i.message}`)
+              .join("; "),
+          },
+        });
         return;
       }
       if (error instanceof HttpError) {
@@ -472,33 +492,35 @@ export function createApp(
       };
       const status = upstream.$metadata?.httpStatusCode;
       const mapped =
-        status === 403
-          ? 403
-          : status === 404
-            ? 404
-            : upstream.type === "entity.parse.failed"
-              ? 400
-              : upstream.type === "entity.too.large"
-                ? 413
-                : 502;
+        status === 501
+          ? 501
+          : status === 403
+            ? 403
+            : status === 404
+              ? 404
+              : upstream.type === "entity.parse.failed"
+                ? 400
+                : upstream.type === "entity.too.large"
+                  ? 413
+                  : 502;
       const message =
-        mapped === 403
-          ? "S3 access denied. Check credentials and permissions."
-          : mapped === 404
-            ? "S3 bucket or object not found."
-            : mapped === 400
-              ? "Invalid JSON request."
-              : mapped === 413
-                ? "Request body too large."
-                : "Unable to complete the storage request. Check endpoint, region, connectivity, and permissions.";
-      res
-        .status(mapped)
-        .json({
-          error: {
-            code: mapped === 502 ? "STORAGE_ERROR" : "REQUEST_ERROR",
-            message,
-          },
-        });
+        mapped === 501
+          ? "This S3 endpoint does not support the requested operation."
+          : mapped === 403
+            ? "S3 access denied. Check credentials and permissions."
+            : mapped === 404
+              ? "S3 bucket or object not found."
+              : mapped === 400
+                ? "Invalid JSON request."
+                : mapped === 413
+                  ? "Request body too large."
+                  : "Unable to complete the storage request. Check endpoint, region, connectivity, and permissions.";
+      res.status(mapped).json({
+        error: {
+          code: mapped === 502 ? "STORAGE_ERROR" : "REQUEST_ERROR",
+          message,
+        },
+      });
     },
   );
   return app;

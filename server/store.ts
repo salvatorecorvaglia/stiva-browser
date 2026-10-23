@@ -45,17 +45,34 @@ export class Store {
     private key: Buffer,
   ) {}
 
-  static async open(directory: string) {
+  static async open(directory: string, databaseUri?: string) {
     await mkdir(directory, { recursive: true, mode: 0o700 });
-    const db = knex({
-      client: "better-sqlite3",
-      connection: { filename: path.join(directory, "stiva.sqlite") },
-      useNullAsDefault: true,
-      pool: { min: 1, max: 1 },
-    });
+    if (
+      databaseUri &&
+      !["postgres:", "postgresql:"].includes(new URL(databaseUri).protocol)
+    ) {
+      throw new Error("DB_URI must be a PostgreSQL connection URI");
+    }
+    const db = knex(
+      databaseUri
+        ? {
+            client: "pg",
+            connection: databaseUri,
+            pool: { min: 0, max: 10 },
+            acquireConnectionTimeout: 15000,
+          }
+        : {
+            client: "better-sqlite3",
+            connection: { filename: path.join(directory, "stiva.sqlite") },
+            useNullAsDefault: true,
+            pool: { min: 1, max: 1 },
+          },
+    );
     try {
-      await db.raw("PRAGMA journal_mode = WAL");
-      await db.raw("PRAGMA busy_timeout = 5000");
+      if (!databaseUri) {
+        await db.raw("PRAGMA journal_mode = WAL");
+        await db.raw("PRAGMA busy_timeout = 5000");
+      }
       await db.migrate.latest({
         migrationSource: {
           getMigrations: async () => ["001_servers"],

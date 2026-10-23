@@ -1908,3 +1908,137 @@ tbody tr.selected {
     transition: none !important;
   }
 }
+
+.object-tool-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 28px 10px;
+  color: #789184;
+  font-size: 12px;
+}
+.deletion-summary {
+  color: #637d6d;
+  margin: 0 0 15px;
+  font-size: 13px;
+}
+.versions-body {
+  padding: 20px 24px;
+}
+.version-search {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+}
+.version-search label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  flex: 1;
+  font-size: 11px;
+  color: #627c6b;
+}
+.version-search input {
+  border: 1px solid #dfe8e2;
+  border-radius: 6px;
+  padding: 10px;
+  width: 100%;
+  font-size: 11px;
+}
+.version-explanation {
+  font-size: 11px;
+  line-height: 1.8;
+  margin: 15px 0;
+}
+.version-confirm {
+  border: 1px solid #eadfd7;
+  border-radius: 8px;
+  margin: 15px 0;
+  background: #fffcf8;
+}
+.version-confirm h3 {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+.version-confirm p {
+  font-size: 11px;
+  line-height: 1.8;
+  color: #8b7e6f;
+  overflow-wrap: anywhere;
+  margin-bottom: 15px;
+}
+.version-confirm code {
+  font-size: 10px;
+}
+.versions-table {
+  border: 1px solid #e6ece8;
+  border-radius: 7px;
+  max-height: 40vh;
+}
+.versions-table td {
+  padding: 12px;
+  vertical-align: middle;
+}
+.versions-table td:first-child {
+  max-width: 300px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.versions-table strong {
+  display: block;
+  color: #4a6857;
+  font-size: 11px;
+}
+.versions-table code {
+  font-size: 9px;
+  display: block;
+  margin-top: 6px;
+  color: #95a79b;
+}
+.version-badges {
+  display: flex;
+  gap: 6px;
+  margin-top: 7px;
+}
+.version-badges span {
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 9px;
+  background: #ecf6ee;
+  color: #4e8b64;
+}
+.version-badges .marker-badge {
+  background: #fff0e9;
+  color: #b8856f;
+}
+.version-pagination {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 15px;
+  font-size: 10px;
+  color: #92a297;
+}
+.version-pagination > span {
+  margin-right: auto;
+}
+@media (max-width: 680px) {
+  .toolbar-actions {
+    flex-wrap: wrap;
+  }
+  .versions-body {
+    padding: 18px;
+  }
+  .version-search {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .versions-table table {
+    min-width: 620px;
+  }
+  .inspect-footer {
+    flex-wrap: wrap;
+  }
+}

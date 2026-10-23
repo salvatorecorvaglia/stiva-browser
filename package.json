@@ -1,6 +1,7 @@
 {
   "name": "stiva-browser",
   "version": "1.0.0",
+  "description": "A shared internal dashboard for AWS S3, MinIO, and other S3-compatible servers",
   "private": true,
   "type": "module",
   "engines": {
@@ -23,6 +24,7 @@
     "helmet": "^8.0.0",
     "knex": "^3.0.0",
     "lucide-react": "^0.468.0",
+    "pg": "^8.23.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "zod": "^4.0.0"
