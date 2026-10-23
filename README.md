@@ -1,8 +1,8 @@
-# Stiva Browser
+# Stiva Browser 🖼️
 
 **A shared internal dashboard for AWS S3, MinIO, and other S3-compatible servers**
 
-**Stiva Browser** is a self-hosted web dashboard for managing files on AWS S3, MinIO, and other S3-compatible storage servers
+**Stiva Browser** is a self-hosted web dashboard for managing files on AWS S3, MinIO, and other S3-compatible storage servers.
 
 ## Run locally
 
@@ -138,14 +138,24 @@ Biome handles linting and formatting. Run `pnpm check` to check both, `pnpm lint
 
 Existing React hook dependencies, button types, and static-element interaction findings are temporarily reported as warnings in `biome.json`; the remaining recommended rules keep their default severity.
 
-## Verification
+---
 
-`pnpm test` runs isolated API/persistence tests with temporary databases. To run live tests against two disposable S3-compatible endpoints, set `STIVA_TEST_S3_A` and `STIVA_TEST_S3_B`, plus `STIVA_TEST_ACCESS_KEY` and `STIVA_TEST_SECRET_KEY`, then run `pnpm test`. These are **test-harness settings only**; the application never reads S3 credential environment variables. The fixture credentials are registered through the API and cleaned up with the temporary database. Tests create uniquely named buckets and remove them afterward.
+## 🤝 Contributing
 
-`ppnpm test:browser` runs Chromium UI checks using mocked S3 responses and a real local backend/database. Install the browser once with `pnpm exec playwright install chromium`. Browser test data lives in ignored `test-results/`.
+Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
-After building `stiva-browser:1.0.0`, `node tests/container-smoke.mjs` verifies the image's non-root user, read-only root filesystem, static UI, encrypted database, and restart persistence. It creates and removes its own disposable container and volume.
+## 📜 Changelog
 
-`node tests/run-postgres.mjs` runs migration, encryption, CRUD, and restart checks using a disposable `postgres:17-alpine` Docker container. It uses a temporary loopback-only fixture database with trust authentication, then removes the container and its in-memory database; this is not a production database configuration.
+Detailed release history and version changes can be found in [CHANGELOG.md](CHANGELOG.md).
 
-For versioning integration tests, point `STIVA_TEST_VERSIONED_S3` at a disposable S3-compatible endpoint supporting bucket versioning, and provide the test access/secret keys above. Run `node --import tsx --test tests/versions-live.test.ts`. The test creates and removes its own versioned bucket, verifies pagination and restore, and cleans up its versions and delete markers. Large multipart-copy ranges and failure cleanup are verified with API-level fixtures without allocating multi-gigabyte test objects. For external PostgreSQL tests, `STIVA_TEST_DB_URI` must identify an empty disposable database.
+## 🔐 Security
+
+If you discover a security vulnerability, please see our [Security Policy](SECURITY.md).
+
+## 📝 License
+
+Distributed under the MIT License. See [LICENSE](LICENSE) for more information.
+
+---
+
+**Author**: [Salvatore Corvaglia](https://github.com/salvatorecorvaglia)
