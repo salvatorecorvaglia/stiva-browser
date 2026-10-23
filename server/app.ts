@@ -15,6 +15,7 @@ import {
 import { Upload } from "@aws-sdk/lib-storage";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import express, { type NextFunction, type Request, type Response } from "express";
+import { rateLimit } from "express-rate-limit";
 import helmet from "helmet";
 import { ZodError, z } from "zod";
 import { HttpError } from "./errors.js";
@@ -403,6 +404,16 @@ export function createApp(
 
   app.use("/api", (_req, _res, next) => next(new HttpError(404, "API route not found")));
   if (options.staticDirectory) {
+    // Share one per-client budget across assets and the SPA fallback before filesystem access.
+    app.use(
+      rateLimit({
+        windowMs: 60_000,
+        limit: 300,
+        standardHeaders: "draft-8",
+        legacyHeaders: false,
+        message: { error: { code: "RATE_LIMITED", message: "Too many requests, try again later" } },
+      }),
+    );
     app.use(express.static(options.staticDirectory));
     app.get("/{*path}", (_req, res) =>
       res.sendFile(path.join(options.staticDirectory!, "index.html")),

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, stat, unlink } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, unlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
@@ -86,6 +86,33 @@ async function fixture(t: TestContext) {
   const app = createApp(store, { clientFactory: factory });
   return { directory, store, app };
 }
+
+test("static assets and SPA fallback share a rate limit before filesystem access", async (t) => {
+  const { directory, store } = await fixture(t);
+  await writeFile(path.join(directory, "index.html"), "<html>Stiva</html>");
+  await writeFile(path.join(directory, "asset.txt"), "asset");
+  const app = createApp(store, { staticDirectory: directory });
+
+  for (let i = 0; i < 300; i++) {
+    const response = await request(app)
+      .get(i % 2 === 0 ? "/asset.txt" : "/dashboard")
+      .expect(200);
+    assert.equal(response.text, i % 2 === 0 ? "asset" : "<html>Stiva</html>");
+  }
+  for (const route of ["/asset.txt", "/dashboard"]) {
+    const response = await request(app)
+      .get(route)
+      .set("X-Forwarded-For", "203.0.113.1")
+      .expect(429);
+    assert.equal(response.body.error.code, "RATE_LIMITED");
+    assert.ok(Number(response.headers["retry-after"]) > 0);
+  }
+  await request(app).get("/api/health/live").expect(200);
+  await request(app).get("/api/missing").expect(404);
+  await request(createApp(store, { staticDirectory: directory }))
+    .get("/dashboard")
+    .expect(200);
+});
 
 test("credentials are encrypted, redacted, retained on update, and survive restart", async (t) => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "stiva-restart-"));
