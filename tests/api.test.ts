@@ -1,13 +1,13 @@
-import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm, stat, unlink } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
-import request from "supertest";
+import { type TestContext, test } from "node:test";
 import { S3Client } from "@aws-sdk/client-s3";
+import request from "supertest";
+import { type ClientFactory, createApp } from "../server/app.js";
 import { Store } from "../server/store.js";
-import { createApp, type ClientFactory } from "../server/app.js";
 
 const config = {
   name: "Primary storage",
@@ -24,10 +24,7 @@ const factory: ClientFactory = (input, credentials) => {
     forcePathStyle: true,
     credentials,
   });
-  client.send = (async (command: {
-    constructor: { name: string };
-    input: Record<string, any>;
-  }) => {
+  client.send = (async (command: { constructor: { name: string }; input: Record<string, any> }) => {
     if (credentials.secretAccessKey === "wrong")
       throw Object.assign(new Error("credential material must not leak"), {
         $metadata: { httpStatusCode: 403 },
@@ -37,9 +34,7 @@ const factory: ClientFactory = (input, credentials) => {
         return {
           Buckets: [
             {
-              Name: input.endpoint_url.includes("9001")
-                ? "secondary"
-                : "documents",
+              Name: input.endpoint_url.includes("9001") ? "secondary" : "documents",
             },
           ],
         };
@@ -47,9 +42,7 @@ const factory: ClientFactory = (input, credentials) => {
         return {
           Contents: [{ Key: `${command.input.Prefix}hello.txt`, Size: 5 }],
           CommonPrefixes: [{ Prefix: "folder/" }],
-          NextContinuationToken: command.input.ContinuationToken
-            ? undefined
-            : "page-two",
+          NextContinuationToken: command.input.ContinuationToken ? undefined : "page-two",
         };
       case "HeadObjectCommand":
         return {
@@ -61,19 +54,16 @@ const factory: ClientFactory = (input, credentials) => {
         return {
           Body: Readable.from(["hello"]),
           ContentLength: 5,
-          ContentType:
-            command.input.Key === "unsafe.svg" ? "image/svg+xml" : "text/plain",
+          ContentType: command.input.Key === "unsafe.svg" ? "image/svg+xml" : "text/plain",
         };
       case "DeleteObjectCommand":
         return {};
       case "DeleteObjectsCommand":
         return {
-          Deleted: command.input.Delete.Objects.filter(
-            (item: any) => item.Key !== "denied",
-          ).map((item: any) => ({ Key: item.Key })),
-          Errors: command.input.Delete.Objects.some(
-            (item: any) => item.Key === "denied",
-          )
+          Deleted: command.input.Delete.Objects.filter((item: any) => item.Key !== "denied").map(
+            (item: any) => ({ Key: item.Key }),
+          ),
+          Errors: command.input.Delete.Objects.some((item: any) => item.Key === "denied")
             ? [{ Key: "denied", Code: "AccessDenied" }]
             : [],
         };
@@ -105,10 +95,7 @@ test("credentials are encrypted, redacted, retained on update, and survive resta
     await rm(directory, { recursive: true, force: true });
   });
   let app = createApp(store, { clientFactory: factory });
-  const created = await request(app)
-    .post("/api/servers")
-    .send(config)
-    .expect(201);
+  const created = await request(app).post("/api/servers").send(config).expect(201);
   const id = created.body.id;
   assert.equal(created.body.secret_key, undefined);
   assert.equal(created.body.access_key, "••••••••");
@@ -116,20 +103,14 @@ test("credentials are encrypted, redacted, retained on update, and survive resta
   assert.ok(row?.secret_key.startsWith("v1:"));
   assert.ok(!JSON.stringify(row).includes(config.secret_key));
   assert.ok(!JSON.stringify(row).includes(config.access_key));
-  assert.equal(
-    (await stat(path.join(directory, "master.key"))).mode & 0o777,
-    0o600,
-  );
+  assert.equal((await stat(path.join(directory, "master.key"))).mode & 0o777, 0o600);
   assert.equal(store.credentials(row!).secretAccessKey, config.secret_key);
   const { secret_key: _secret, access_key: _access, ...other } = config;
   await request(app)
     .put(`/api/servers/${id}`)
     .send({ ...other, name: "Renamed" })
     .expect(200);
-  assert.equal(
-    store.credentials((await store.row(id))!).accessKeyId,
-    config.access_key,
-  );
+  assert.equal(store.credentials((await store.row(id))!).accessKeyId, config.access_key);
   await store.close();
   store = await Store.open(directory);
   app = createApp(store, { clientFactory: factory });
@@ -140,10 +121,7 @@ test("credentials are encrypted, redacted, retained on update, and survive resta
     .put(`/api/servers/${id}`)
     .send({ ...other, secret_key: "replacement" })
     .expect(200);
-  assert.equal(
-    store.credentials((await store.row(id))!).secretAccessKey,
-    "replacement",
-  );
+  assert.equal(store.credentials((await store.row(id))!).secretAccessKey, "replacement");
   await request(app).delete(`/api/servers/${id}`).expect(204);
   assert.deepEqual((await request(app).get("/api/servers")).body, []);
 });
@@ -167,22 +145,17 @@ test("server selection rejects missing, unknown, and conflicting IDs and isolate
       .send({ ...config, endpoint_url: "http://127.0.0.1:9001" })
   ).body.id;
   await request(app).get("/api/buckets").expect(400);
-  await request(app)
-    .get("/api/buckets")
-    .set("x-s3-server-id", "missing")
-    .expect(404);
+  await request(app).get("/api/buckets").set("x-s3-server-id", "missing").expect(404);
   await request(app)
     .get(`/api/buckets?serverId=${second}`)
     .set("x-s3-server-id", first)
     .expect(400);
   assert.equal(
-    (await request(app).get("/api/buckets").set("x-s3-server-id", first)).body
-      .buckets[0].name,
+    (await request(app).get("/api/buckets").set("x-s3-server-id", first)).body.buckets[0].name,
     "documents",
   );
   assert.equal(
-    (await request(app).get(`/api/buckets?serverId=${second}`)).body.buckets[0]
-      .name,
+    (await request(app).get(`/api/buckets?serverId=${second}`)).body.buckets[0].name,
     "secondary",
   );
 });
@@ -287,19 +260,14 @@ test("folder listing, pagination, metadata, signed URLs, and exact encoded keys"
 test("batch deletion reports partial failures and supports more than one S3 batch", async (t) => {
   const { app } = await fixture(t);
   const id = (await request(app).post("/api/servers").send(config)).body.id;
-  const keys = [
-    ...Array.from({ length: 1002 }, (_, index) => `file-${index}`),
-    "denied",
-  ];
+  const keys = [...Array.from({ length: 1002 }, (_, index) => `file-${index}`), "denied"];
   const result = await request(app)
     .delete("/api/buckets/documents/objects")
     .set("x-s3-server-id", id)
     .send({ keys })
     .expect(200);
   assert.equal(result.body.deleted.length, 1002);
-  assert.deepEqual(result.body.errors, [
-    { key: "denied", code: "AccessDenied" },
-  ]);
+  assert.deepEqual(result.body.errors, [{ key: "denied", code: "AccessDenied" }]);
   await request(app)
     .delete("/api/buckets/documents/objects")
     .set("x-s3-server-id", id)

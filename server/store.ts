@@ -1,10 +1,5 @@
-import {
-  randomBytes,
-  randomUUID,
-  createCipheriv,
-  createDecipheriv,
-} from "node:crypto";
-import { mkdir, readFile, writeFile, stat, chmod } from "node:fs/promises";
+import { createCipheriv, createDecipheriv, randomBytes, randomUUID } from "node:crypto";
+import { chmod, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import knex, { type Knex } from "knex";
 import { z } from "zod";
@@ -47,10 +42,7 @@ export class Store {
 
   static async open(directory: string, databaseUri?: string) {
     await mkdir(directory, { recursive: true, mode: 0o700 });
-    if (
-      databaseUri &&
-      !["postgres:", "postgresql:"].includes(new URL(databaseUri).protocol)
-    ) {
+    if (databaseUri && !["postgres:", "postgresql:"].includes(new URL(databaseUri).protocol)) {
       throw new Error("DB_URI must be a PostgreSQL connection URI");
     }
     const db = knex(
@@ -90,8 +82,7 @@ export class Store {
                 table.string("created_at").notNullable();
                 table.string("updated_at").notNullable();
               }),
-            down: async (connection: Knex) =>
-              connection.schema.dropTable("s3_servers"),
+            down: async (connection: Knex) => connection.schema.dropTable("s3_servers"),
           }),
         },
       });
@@ -112,8 +103,7 @@ export class Store {
             mode: 0o600,
           });
         } catch (writeError) {
-          if ((writeError as NodeJS.ErrnoException).code !== "EEXIST")
-            throw writeError;
+          if ((writeError as NodeJS.ErrnoException).code !== "EEXIST") throw writeError;
         }
         key = await readFile(keyPath);
       }
@@ -136,10 +126,7 @@ export class Store {
     const nonce = randomBytes(12);
     const cipher = createCipheriv("aes-256-gcm", this.key, nonce);
     cipher.setAAD(Buffer.from("stiva:credential:v1"));
-    const encrypted = Buffer.concat([
-      cipher.update(value, "utf8"),
-      cipher.final(),
-    ]);
+    const encrypted = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
     return [
       "v1",
       nonce.toString("base64"),
@@ -151,11 +138,7 @@ export class Store {
     const [version, nonce, tag, ciphertext] = value.split(":");
     if (version !== "v1" || !nonce || !tag || !ciphertext)
       throw new Error("Invalid encrypted credential");
-    const cipher = createDecipheriv(
-      "aes-256-gcm",
-      this.key,
-      Buffer.from(nonce, "base64"),
-    );
+    const cipher = createDecipheriv("aes-256-gcm", this.key, Buffer.from(nonce, "base64"));
     cipher.setAAD(Buffer.from("stiva:credential:v1"));
     cipher.setAuthTag(Buffer.from(tag, "base64"));
     return Buffer.concat([
@@ -173,8 +156,8 @@ export class Store {
     };
   }
   async list() {
-    return (await this.db<ServerRow>("s3_servers").orderBy("created_at")).map(
-      (row) => this.publicRow(row),
+    return (await this.db<ServerRow>("s3_servers").orderBy("created_at")).map((row) =>
+      this.publicRow(row),
     );
   }
   async row(id: string) {
@@ -193,12 +176,8 @@ export class Store {
       id: existing?.id ?? randomUUID(),
       created_at: existing?.created_at ?? now,
       updated_at: now,
-      access_key: input.access_key
-        ? this.encrypt(input.access_key)
-        : existing!.access_key,
-      secret_key: input.secret_key
-        ? this.encrypt(input.secret_key)
-        : existing!.secret_key,
+      access_key: input.access_key ? this.encrypt(input.access_key) : existing!.access_key,
+      secret_key: input.secret_key ? this.encrypt(input.secret_key) : existing!.secret_key,
     };
     if (existing) await this.db("s3_servers").where({ id: row.id }).update(row);
     else await this.db("s3_servers").insert(row);

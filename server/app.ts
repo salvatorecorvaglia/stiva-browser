@@ -1,30 +1,27 @@
-import express, {
-  type Request,
-  type Response,
-  type NextFunction,
-} from "express";
-import helmet from "helmet";
-import path from "node:path";
 import { createHash } from "node:crypto";
+import path from "node:path";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import { z, ZodError } from "zod";
 import {
-  ListBucketsCommand,
-  ListObjectsV2Command,
-  GetObjectCommand,
-  PutObjectCommand,
-  HeadObjectCommand,
   DeleteObjectCommand,
   DeleteObjectsCommand,
+  GetObjectCommand,
+  HeadObjectCommand,
+  ListBucketsCommand,
+  ListObjectsV2Command,
+  PutObjectCommand,
   type S3Client,
 } from "@aws-sdk/client-s3";
 import { Upload } from "@aws-sdk/lib-storage";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { Store, serverInput, type ServerInput } from "./store.js";
-import { makeS3 } from "./s3.js";
+import express, { type NextFunction, type Request, type Response } from "express";
+import helmet from "helmet";
+import { ZodError, z } from "zod";
 import { HttpError } from "./errors.js";
 import { registerObjectTools } from "./object-tools.js";
+import { makeS3 } from "./s3.js";
+import { type ServerInput, type Store, serverInput } from "./store.js";
+
 const keySchema = z
   .string()
   .min(1)
@@ -67,16 +64,12 @@ export function createApp(
         req.get("sec-fetch-site") === "cross-site" ||
         (origin && new URL(origin).host !== req.get("host"))
       )
-        return next(
-          new HttpError(403, "Cross-origin changes are not permitted"),
-        );
+        return next(new HttpError(403, "Cross-origin changes are not permitted"));
     }
     next();
   });
   const json = express.json({ limit: "64kb" });
-  app.use((req, res, next) =>
-    req.path === "/api/stream/upload" ? next() : json(req, res, next),
-  );
+  app.use((req, res, next) => (req.path === "/api/stream/upload" ? next() : json(req, res, next)));
 
   app.get("/api/health/live", (_req, res) => res.json({ status: "ok" }));
   app.get("/api/health/ready", async (_req, res) => {
@@ -86,10 +79,7 @@ export function createApp(
 
   async function selected(req: Request) {
     const header = req.get("x-s3-server-id");
-    const query =
-      req.query.serverId === undefined
-        ? undefined
-        : parameter(req.query.serverId);
+    const query = req.query.serverId === undefined ? undefined : parameter(req.query.serverId);
     if (header && query && header !== query)
       throw new HttpError(400, "Conflicting server identifiers");
     const id = header || query;
@@ -100,10 +90,7 @@ export function createApp(
       { ...row, force_path_style: Boolean(row.force_path_style) },
       store.credentials(row),
     );
-    clientScopes.set(
-      client,
-      createHash("sha256").update(JSON.stringify(row)).digest("hex"),
-    );
+    clientScopes.set(client, createHash("sha256").update(JSON.stringify(row)).digest("hex"));
     return client;
   }
   async function using<T>(req: Request, run: (client: S3Client) => Promise<T>) {
@@ -121,10 +108,7 @@ export function createApp(
     if (!existing && (!input.access_key || !input.secret_key))
       throw new HttpError(400, "Access key and secret key are required");
     if (input.access_key?.includes("••••"))
-      throw new HttpError(
-        400,
-        "Enter the actual access key or omit it to retain the stored key",
-      );
+      throw new HttpError(400, "Enter the actual access key or omit it to retain the stored key");
     return { input, existing };
   }
   registerObjectTools(
@@ -160,17 +144,11 @@ export function createApp(
     res.status(201).json(await store.save(input));
   });
   app.put("/api/servers/:id", async (req, res) => {
-    const { input, existing } = await config(
-      req.body,
-      parameter(req.params.id),
-    );
+    const { input, existing } = await config(req.body, parameter(req.params.id));
     res.json(await store.save(input, existing));
   });
   app.delete("/api/servers/:id", async (req, res) => {
-    const deleted = await store
-      .db("s3_servers")
-      .where({ id: req.params.id })
-      .delete();
+    const deleted = await store.db("s3_servers").where({ id: req.params.id }).delete();
     if (!deleted) throw new HttpError(404, "S3 server not found");
     res.status(204).end();
   });
@@ -180,9 +158,7 @@ export function createApp(
       const all = [];
       let token: string | undefined;
       do {
-        const result = await client.send(
-          new ListBucketsCommand({ ContinuationToken: token }),
-        );
+        const result = await client.send(new ListBucketsCommand({ ContinuationToken: token }));
         all.push(...(result.Buckets ?? []));
         token = result.ContinuationToken;
       } while (token);
@@ -228,12 +204,7 @@ export function createApp(
         new HeadObjectCommand({
           Bucket: parameter(req.params.bucket),
           Key: keySchema.parse(req.query.key),
-          VersionId: z
-            .string()
-            .min(1)
-            .max(2048)
-            .optional()
-            .parse(req.query.versionId),
+          VersionId: z.string().min(1).max(2048).optional().parse(req.query.versionId),
         }),
       ),
     );
@@ -270,8 +241,7 @@ export function createApp(
       const url = await using(req, (client) =>
         getSignedUrl(client, command, {
           expiresIn: input.expiresIn,
-          signableHeaders:
-            direction === "upload" ? new Set(["content-type"]) : undefined,
+          signableHeaders: direction === "upload" ? new Set(["content-type"]) : undefined,
         }),
       );
       res.json({
@@ -288,8 +258,7 @@ export function createApp(
   }
   app.post("/api/buckets/:bucket/folders", async (req, res) => {
     const key = keySchema.parse(req.body?.key);
-    if (!key.endsWith("/"))
-      throw new HttpError(400, "Folder keys must end with /");
+    if (!key.endsWith("/")) throw new HttpError(400, "Folder keys must end with /");
     await using(req, (client) =>
       client.send(
         new PutObjectCommand({
@@ -304,20 +273,15 @@ export function createApp(
     res.status(201).json({ key });
   });
   app.delete("/api/buckets/:bucket/objects", async (req, res) => {
-    const { keys } = z
-      .object({ keys: z.array(keySchema).min(1).max(10000) })
-      .parse(req.body);
+    const { keys } = z.object({ keys: z.array(keySchema).min(1).max(10000) }).parse(req.body);
     const result = await using(req, async (client) => {
       const bucket = parameter(req.params.bucket);
       if (keys.length === 1) {
-        await client.send(
-          new DeleteObjectCommand({ Bucket: bucket, Key: keys[0] }),
-        );
+        await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: keys[0] }));
         return { deleted: keys, errors: [] };
       }
       const deleted: string[] = [];
-      const errors: { key: string | undefined; code: string | undefined }[] =
-        [];
+      const errors: { key: string | undefined; code: string | undefined }[] = [];
       for (let start = 0; start < keys.length; start += 1000) {
         const output = await client.send(
           new DeleteObjectsCommand({
@@ -327,11 +291,7 @@ export function createApp(
             },
           }),
         );
-        deleted.push(
-          ...(output.Deleted ?? []).flatMap((item) =>
-            item.Key ? [item.Key] : [],
-          ),
-        );
+        deleted.push(...(output.Deleted ?? []).flatMap((item) => (item.Key ? [item.Key] : [])));
         errors.push(
           ...(output.Errors ?? []).map((item) => ({
             key: item.Key,
@@ -384,19 +344,10 @@ export function createApp(
         }
         if (preview && (output.ContentLength ?? 0) > 1048576) {
           output.Body.destroy();
-          throw new HttpError(
-            413,
-            "Storage returned a preview larger than 1 MiB",
-          );
+          throw new HttpError(413, "Storage returned a preview larger than 1 MiB");
         }
-        res.setHeader(
-          "Content-Type",
-          preview ? mime : "application/octet-stream",
-        );
-        res.setHeader(
-          "Content-Disposition",
-          preview ? "inline" : disposition(input.key),
-        );
+        res.setHeader("Content-Type", preview ? mime : "application/octet-stream");
+        res.setHeader("Content-Disposition", preview ? "inline" : disposition(input.key));
         if (output.ContentLength !== undefined)
           res.setHeader("Content-Length", output.ContentLength);
         if (preview) {
@@ -405,9 +356,7 @@ export function createApp(
             transform(chunk, _encoding, callback) {
               length += chunk.length;
               callback(
-                length > 1048576
-                  ? new HttpError(413, "Preview exceeds 1 MiB")
-                  : null,
+                length > 1048576 ? new HttpError(413, "Preview exceeds 1 MiB") : null,
                 length <= 1048576 ? chunk : undefined,
               );
             },
@@ -452,77 +401,71 @@ export function createApp(
     res.status(201).json({ key: input.key });
   });
 
-  app.use("/api", (_req, _res, next) =>
-    next(new HttpError(404, "API route not found")),
-  );
+  app.use("/api", (_req, _res, next) => next(new HttpError(404, "API route not found")));
   if (options.staticDirectory) {
     app.use(express.static(options.staticDirectory));
     app.get("/{*path}", (_req, res) =>
       res.sendFile(path.join(options.staticDirectory!, "index.html")),
     );
   }
-  app.use(
-    (error: unknown, _req: Request, res: Response, _next: NextFunction) => {
-      if (res.headersSent) {
-        res.destroy();
-        return;
-      }
-      if (error instanceof ZodError) {
-        res.status(400).json({
-          error: {
-            code: "VALIDATION_ERROR",
-            message: error.issues
-              .map((i) => `${i.path.join(".") || "input"}: ${i.message}`)
-              .join("; "),
-          },
-        });
-        return;
-      }
-      if (error instanceof HttpError) {
-        res
-          .status(error.status)
-          .json({ error: { code: "REQUEST_ERROR", message: error.message } });
-        return;
-      }
-      const upstream = error as {
-        name?: string;
-        type?: string;
-        status?: number;
-        $metadata?: { httpStatusCode?: number };
-      };
-      const status = upstream.$metadata?.httpStatusCode;
-      const mapped =
-        status === 501
-          ? 501
-          : status === 403
-            ? 403
-            : status === 404
-              ? 404
-              : upstream.type === "entity.parse.failed"
-                ? 400
-                : upstream.type === "entity.too.large"
-                  ? 413
-                  : 502;
-      const message =
-        mapped === 501
-          ? "This S3 endpoint does not support the requested operation."
-          : mapped === 403
-            ? "S3 access denied. Check credentials and permissions."
-            : mapped === 404
-              ? "S3 bucket or object not found."
-              : mapped === 400
-                ? "Invalid JSON request."
-                : mapped === 413
-                  ? "Request body too large."
-                  : "Unable to complete the storage request. Check endpoint, region, connectivity, and permissions.";
-      res.status(mapped).json({
+  app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
+    if (res.headersSent) {
+      res.destroy();
+      return;
+    }
+    if (error instanceof ZodError) {
+      res.status(400).json({
         error: {
-          code: mapped === 502 ? "STORAGE_ERROR" : "REQUEST_ERROR",
-          message,
+          code: "VALIDATION_ERROR",
+          message: error.issues
+            .map((i) => `${i.path.join(".") || "input"}: ${i.message}`)
+            .join("; "),
         },
       });
-    },
-  );
+      return;
+    }
+    if (error instanceof HttpError) {
+      res.status(error.status).json({ error: { code: "REQUEST_ERROR", message: error.message } });
+      return;
+    }
+    const upstream = error as {
+      name?: string;
+      type?: string;
+      status?: number;
+      $metadata?: { httpStatusCode?: number };
+    };
+    const status = upstream.$metadata?.httpStatusCode;
+    const mapped =
+      status === 501
+        ? 501
+        : status === 403
+          ? 403
+          : status === 404
+            ? 404
+            : upstream.type === "entity.parse.failed"
+              ? 400
+              : upstream.type === "entity.too.large"
+                ? 413
+                : 502;
+    const message =
+      mapped === 501
+        ? "This S3 endpoint does not support the requested operation."
+        : mapped === 403
+          ? "S3 access denied. Check credentials and permissions."
+          : mapped === 404
+            ? "S3 bucket or object not found."
+            : mapped === 400
+              ? "Invalid JSON request."
+              : mapped === 413
+                ? "Request body too large."
+                : "Unable to complete the storage request. Check endpoint, region, connectivity, and permissions.";
+    res.status(mapped).json({
+      error: {
+        code: mapped === 502 ? "STORAGE_ERROR" : "REQUEST_ERROR",
+        message,
+      },
+    });
+  });
   return app;
 }
 

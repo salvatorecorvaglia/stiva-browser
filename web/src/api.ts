@@ -63,14 +63,11 @@ export async function api<T>(
   const response = await fetch(url, { ...options, headers });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
-    throw new Error(
-      body.error?.message ?? `Request failed (${response.status})`,
-    );
+    throw new Error(body.error?.message ?? `Request failed (${response.status})`);
   }
   return response.status === 204 ? (undefined as T) : response.json();
 }
-export const bucketPath = (bucket: string) =>
-  `/api/buckets/${encodeURIComponent(bucket)}`;
+export const bucketPath = (bucket: string) => `/api/buckets/${encodeURIComponent(bucket)}`;
 export const streamUrl = (
   serverId: string,
   bucket: string,
@@ -102,14 +99,12 @@ export function uploadFile(
   return new Promise<void>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("PUT", url);
-    for (const [key, value] of Object.entries(headers))
-      xhr.setRequestHeader(key, value);
+    for (const [key, value] of Object.entries(headers)) xhr.setRequestHeader(key, value);
     const abort = () => xhr.abort();
     signal.addEventListener("abort", abort, { once: true });
     const finish = () => signal.removeEventListener("abort", abort);
     xhr.upload.onprogress = (event) => {
-      if (event.lengthComputable)
-        progress(Math.round((event.loaded / event.total) * 100));
+      if (event.lengthComputable) progress(Math.round((event.loaded / event.total) * 100));
     };
     xhr.onload = () => {
       finish();

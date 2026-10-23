@@ -1,15 +1,16 @@
 FROM node:24-alpine AS dependencies
 WORKDIR /app
+RUN corepack enable
 RUN apk add --no-cache python3 make g++
-COPY package.json package-lock.json ./
-RUN npm ci
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+RUN pnpm install --frozen-lockfile
 
 FROM dependencies AS build
 COPY tsconfig*.json vite.config.ts ./
 COPY server ./server
 COPY web ./web
-RUN npm run typecheck && npm run build
-RUN npm prune --omit=dev
+RUN pnpm typecheck && pnpm build
+RUN pnpm prune --prod
 
 FROM node:24-alpine AS runtime
 ENV NODE_ENV=production PORT=3000 DATA_DIR=/data

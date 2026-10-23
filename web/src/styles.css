@@ -938,8 +938,7 @@ tbody tr.selected {
 }
 .welcome-panel {
   border: 1px solid #e3ebe7;
-  background:
-    radial-gradient(ellipse at 50% 0, #f0f8f2, transparent 60%), white;
+  background: radial-gradient(ellipse at 50% 0, #f0f8f2, transparent 60%), white;
   border-radius: 12px;
   text-align: center;
   padding: 60px 20px 35px;

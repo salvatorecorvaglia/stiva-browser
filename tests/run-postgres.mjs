@@ -36,17 +36,13 @@ try {
   }
   if (!ready) throw new Error("PostgreSQL fixture did not start");
   const address = docker("port", name, "5432/tcp").split("\n")[0];
-  const child = spawn(
-    process.execPath,
-    ["--import", "tsx", "--test", "tests/postgres.test.ts"],
-    {
-      stdio: "inherit",
-      env: {
-        ...process.env,
-        STIVA_TEST_DB_URI: `postgresql://postgres@${address}/postgres`,
-      },
+  const child = spawn(process.execPath, ["--import", "tsx", "--test", "tests/postgres.test.ts"], {
+    stdio: "inherit",
+    env: {
+      ...process.env,
+      STIVA_TEST_DB_URI: `postgresql://postgres@${address}/postgres`,
     },
-  );
+  });
   process.exitCode = await new Promise((resolve) =>
     child.once("exit", (code) => resolve(code ?? 1)),
   );

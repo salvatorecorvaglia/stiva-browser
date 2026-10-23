@@ -1,0 +1,6 @@
+# Preserve npm-compatible version resolution when importing the existing lockfile.
+minimumReleaseAge: 0
+
+allowBuilds:
+  better-sqlite3: true
+  esbuild: true

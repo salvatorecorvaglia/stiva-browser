@@ -1,5 +1,6 @@
-import React, { useEffect, useRef } from "react";
 import { X } from "lucide-react";
+import type React from "react";
+import { useEffect, useRef } from "react";
 
 export function Dialog({
   title,
@@ -35,10 +36,7 @@ export function Dialog({
         event.preventDefault();
         return;
       }
-      if (
-        event.shiftKey &&
-        (document.activeElement === first || document.activeElement === root)
-      ) {
+      if (event.shiftKey && (document.activeElement === first || document.activeElement === root)) {
         event.preventDefault();
         last.focus();
       } else if (
@@ -78,11 +76,7 @@ export function Dialog({
             <h2>{title}</h2>
             {subtitle && <p>{subtitle}</p>}
           </div>
-          <button
-            className="icon-button"
-            aria-label="Close dialog"
-            onClick={onClose}
-          >
+          <button className="icon-button" aria-label="Close dialog" onClick={onClose}>
             <X size={20} />
           </button>
         </div>

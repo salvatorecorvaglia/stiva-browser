@@ -1,5 +1,3 @@
-import React, { useEffect, useRef, useState } from "react";
-import { createRoot } from "react-dom/client";
 import {
   Archive,
   ArrowDownToLine,
@@ -35,19 +33,21 @@ import {
   UploadCloud,
   X,
 } from "lucide-react";
+import React, { useEffect, useRef, useState } from "react";
+import { createRoot } from "react-dom/client";
 import {
   api,
+  type Bucket,
   bucketPath,
   bytes,
   date,
-  streamUrl,
-  uploadFile,
-  type Server,
-  type Bucket,
-  type S3Object,
   type Listing,
   type Metadata,
+  type S3Object,
+  type Server,
   type Signed,
+  streamUrl,
+  uploadFile,
 } from "./api";
 import "./styles.css";
 import { Dialog } from "./Dialog";
@@ -113,28 +113,27 @@ function App() {
     const result = await api<Server[]>("/api/servers");
     setServers(result);
     setServerId((current) =>
-      result.some((item) => item.id === current)
-        ? current
-        : (result[0]?.id ?? ""),
+      result.some((item) => item.id === current) ? current : (result[0]?.id ?? ""),
     );
   }
   useEffect(() => {
     void loadServers().catch((err) => notify(err.message, true));
     return () => {
-      controllers.current.forEach((controller) => controller.abort());
+      controllers.current.forEach((controller) => {
+        controller.abort();
+      });
     };
   }, []);
   useEffect(() => {
     if (!notice) return;
-    const timeout = setTimeout(
-      () => setNotice(null),
-      notice.error ? 10000 : 4500,
-    );
+    const timeout = setTimeout(() => setNotice(null), notice.error ? 10000 : 4500);
     return () => clearTimeout(timeout);
   }, [notice]);
   useEffect(() => {
     contextVersion.current++;
-    controllers.current.forEach((controller) => controller.abort());
+    controllers.current.forEach((controller) => {
+      controller.abort();
+    });
     setBucket("");
     setBuckets([]);
     setConnected(null);
@@ -142,11 +141,7 @@ function App() {
     if (!serverId) return;
     const controller = new AbortController();
     setBucketBusy(true);
-    api<{ buckets: Bucket[] }>(
-      "/api/buckets",
-      { signal: controller.signal },
-      serverId,
-    )
+    api<{ buckets: Bucket[] }>("/api/buckets", { signal: controller.signal }, serverId)
       .then((result) => {
         setBuckets(result.buckets);
         setConnected(true);
@@ -173,11 +168,7 @@ function App() {
     setBusy(true);
     const query = new URLSearchParams({ prefix });
     if (tokens[page]) query.set("continuationToken", tokens[page]!);
-    api<Listing>(
-      `${bucketPath(bucket)}/objects?${query}`,
-      { signal: controller.signal },
-      serverId,
-    )
+    api<Listing>(`${bucketPath(bucket)}/objects?${query}`, { signal: controller.signal }, serverId)
       .then(setListing)
       .catch((err) => {
         if (!controller.signal.aborted) {
@@ -203,7 +194,9 @@ function App() {
   }
   function switchServer(id: string) {
     contextVersion.current++;
-    controllers.current.forEach((controller) => controller.abort());
+    controllers.current.forEach((controller) => {
+      controller.abort();
+    });
     setServerId(id);
     navigate("");
     setListing({ objects: [], prefixes: [], next_token: null });
@@ -261,8 +254,7 @@ function App() {
           {},
           target.serverId,
         );
-        if (!window.confirm(`Replace existing object “${file.name}”?`))
-          continue;
+        if (!window.confirm(`Replace existing object “${file.name}”?`)) continue;
       } catch (err) {
         if (!(err as Error).message.includes("not found")) {
           notify((err as Error).message, true);
@@ -288,9 +280,7 @@ function App() {
       ]);
       const patch = (change: Partial<Transfer>) =>
         setTransfers((current) =>
-          current.map((item) =>
-            item.id === id ? { ...item, ...change } : item,
-          ),
+          current.map((item) => (item.id === id ? { ...item, ...change } : item)),
         );
       try {
         let url: string;
@@ -318,9 +308,7 @@ function App() {
           url = result.url;
           headers = result.required_headers;
         }
-        await uploadFile(url, file, headers, controller.signal, (progress) =>
-          patch({ progress }),
-        );
+        await uploadFile(url, file, headers, controller.signal, (progress) => patch({ progress }));
         patch({ progress: 100, status: "done" });
         refresh();
       } catch (err) {
@@ -341,10 +329,7 @@ function App() {
     object.key.toLowerCase().includes(filter.toLowerCase()),
   );
   const visibleKeys = objects.map((object) => object.key);
-  const totalSize = listing.objects.reduce(
-    (sum, object) => sum + object.size,
-    0,
-  );
+  const totalSize = listing.objects.reduce((sum, object) => sum + object.size, 0);
   const parts = prefix ? prefix.slice(0, -1).split("/") : [];
 
   return (
@@ -414,10 +399,7 @@ function App() {
           <span>WORKSPACE</span>
           <span className="tag">S3</span>
         </div>
-        <button
-          className={`overview-link ${!bucket ? "active" : ""}`}
-          onClick={() => navigate("")}
-        >
+        <button className={`overview-link ${!bucket ? "active" : ""}`} onClick={() => navigate("")}>
           <Database size={17} />
           All buckets<span>{buckets.length}</span>
         </button>
@@ -426,9 +408,7 @@ function App() {
           <button
             className="icon-button"
             title="Reload buckets"
-            onClick={() =>
-              void loadServers().catch((err) => notify(err.message, true))
-            }
+            onClick={() => void loadServers().catch((err) => notify(err.message, true))}
           >
             <RefreshCw size={13} className={bucketBusy ? "spin" : ""} />
           </button>
@@ -450,9 +430,7 @@ function App() {
             </div>
           ) : (
             buckets
-              .filter((item) =>
-                item.name.toLowerCase().includes(bucketFilter.toLowerCase()),
-              )
+              .filter((item) => item.name.toLowerCase().includes(bucketFilter.toLowerCase()))
               .map((item) => (
                 <button
                   key={item.name}
@@ -467,9 +445,7 @@ function App() {
           )}
           {!bucketBusy && !buckets.length && (
             <div className="sidebar-empty">
-              {serverId
-                ? "No buckets available"
-                : "Connect a server to get started"}
+              {serverId ? "No buckets available" : "Connect a server to get started"}
             </div>
           )}
         </nav>
@@ -597,10 +573,7 @@ function App() {
                   <strong>Couldn’t connect to this server</strong>
                   <p>{bucketError}</p>
                 </div>
-                <button
-                  className="button secondary"
-                  onClick={() => setManager(true)}
-                >
+                <button className="button secondary" onClick={() => setManager(true)}>
                   Check configuration
                 </button>
               </div>
@@ -611,9 +584,7 @@ function App() {
               </h2>
               <button
                 className="button secondary"
-                onClick={() =>
-                  void loadServers().catch((err) => notify(err.message, true))
-                }
+                onClick={() => void loadServers().catch((err) => notify(err.message, true))}
               >
                 <RefreshCw size={14} />
                 Refresh
@@ -634,11 +605,7 @@ function App() {
                     </span>
                     <ChevronRight size={17} className="card-arrow" />
                     <h3>{item.name}</h3>
-                    <p>
-                      {item.created_at
-                        ? `Created ${date(item.created_at)}`
-                        : server?.region}
-                    </p>
+                    <p>{item.created_at ? `Created ${date(item.created_at)}` : server?.region}</p>
                     <span className="card-link">
                       Browse bucket <ArrowRight size={13} />
                     </span>
@@ -657,11 +624,7 @@ function App() {
         ) : (
           <>
             <div className="stats-grid">
-              <Stat
-                icon={<HardDrive size={19} />}
-                label="CURRENT BUCKET"
-                value={bucket}
-              />
+              <Stat icon={<HardDrive size={19} />} label="CURRENT BUCKET" value={bucket} />
               <Stat
                 icon={<File size={19} />}
                 label="OBJECTS ON THIS PAGE"
@@ -687,15 +650,10 @@ function App() {
                   <span>/</span>
                   <button onClick={() => navigate(bucket)}>{bucket}</button>
                   {parts.map((part, index) => (
-                    <React.Fragment key={index}>
+                    <React.Fragment key={parts.slice(0, index + 1).join("/")}>
                       <span>/</span>
                       <button
-                        onClick={() =>
-                          navigate(
-                            bucket,
-                            parts.slice(0, index + 1).join("/") + "/",
-                          )
-                        }
+                        onClick={() => navigate(bucket, parts.slice(0, index + 1).join("/") + "/")}
                       >
                         {part}
                       </button>
@@ -746,9 +704,7 @@ function App() {
                   {selected.size > 0 && (
                     <button
                       className="button danger subtle"
-                      onClick={() =>
-                        setModal({ type: "delete", keys: [...selected] })
-                      }
+                      onClick={() => setModal({ type: "delete", keys: [...selected] })}
                     >
                       <Trash2 size={14} />
                       <span>Delete ({selected.size})</span>
@@ -761,17 +717,11 @@ function App() {
                   >
                     <RefreshCw size={16} className={busy ? "spin" : ""} />
                   </button>
-                  <button
-                    className="button secondary"
-                    onClick={() => setModal({ type: "folder" })}
-                  >
+                  <button className="button secondary" onClick={() => setModal({ type: "folder" })}>
                     <FolderPlus size={15} />
                     <span>New folder</span>
                   </button>
-                  <button
-                    className="button primary"
-                    onClick={() => input.current?.click()}
-                  >
+                  <button className="button primary" onClick={() => input.current?.click()}>
                     <Plus size={16} />
                     <span>Upload files</span>
                   </button>
@@ -816,11 +766,7 @@ function App() {
                             }
                             disabled={!visibleKeys.length}
                             onChange={(event) =>
-                              setSelected(
-                                event.target.checked
-                                  ? new Set(visibleKeys)
-                                  : new Set(),
-                              )
+                              setSelected(event.target.checked ? new Set(visibleKeys) : new Set())
                             }
                           />
                         </th>
@@ -842,8 +788,7 @@ function App() {
                               onClick={() =>
                                 navigate(
                                   bucket,
-                                  parts.slice(0, -1).join("/") +
-                                    (parts.length > 1 ? "/" : ""),
+                                  parts.slice(0, -1).join("/") + (parts.length > 1 ? "/" : ""),
                                 )
                               }
                             >
@@ -862,21 +807,14 @@ function App() {
                         <tr key={key}>
                           <td />
                           <td>
-                            <button
-                              className="object-name"
-                              onClick={() => navigate(bucket, key)}
-                            >
+                            <button className="object-name" onClick={() => navigate(bucket, key)}>
                               <span className="file-icon folder">
                                 <Folder size={19} />
                               </span>
                               <span>
-                                {key.slice(prefix.length).replace(/\/$/, "") ||
-                                  "(empty segment)"}
+                                {key.slice(prefix.length).replace(/\/$/, "") || "(empty segment)"}
                               </span>
-                              <ChevronRight
-                                size={13}
-                                className="folder-arrow"
-                              />
+                              <ChevronRight size={13} className="folder-arrow" />
                             </button>
                           </td>
                           <td className="muted">Folder</td>
@@ -904,9 +842,7 @@ function App() {
                         .map((object) => (
                           <tr
                             key={object.key}
-                            className={
-                              selected.has(object.key) ? "selected" : ""
-                            }
+                            className={selected.has(object.key) ? "selected" : ""}
                           >
                             <td className="checkbox-cell">
                               <input
@@ -916,8 +852,7 @@ function App() {
                                 onChange={() =>
                                   setSelected((current) => {
                                     const next = new Set(current);
-                                    if (next.has(object.key))
-                                      next.delete(object.key);
+                                    if (next.has(object.key)) next.delete(object.key);
                                     else next.add(object.key);
                                     return next;
                                   })
@@ -940,9 +875,7 @@ function App() {
                               </button>
                             </td>
                             <td className="size-cell">{bytes(object.size)}</td>
-                            <td className="date-cell">
-                              {date(object.last_modified)}
-                            </td>
+                            <td className="date-cell">{date(object.last_modified)}</td>
                             <td>
                               <div className="row-actions">
                                 <button
@@ -1006,11 +939,7 @@ function App() {
                   {!objects.length && !folders.length && (
                     <Empty
                       icon={<Folder size={30} />}
-                      title={
-                        filter
-                          ? "No matching objects"
-                          : "A little room for something new"
-                      }
+                      title={filter ? "No matching objects" : "A little room for something new"}
                       text={
                         filter
                           ? "Try another search. Search applies to this page."
@@ -1024,9 +953,7 @@ function App() {
                 <span>
                   {folders.length + objects.length} items on this page{" "}
                   <span className="footer-separator">·</span>{" "}
-                  {selected.size
-                    ? `${selected.size} selected`
-                    : "Folders first"}
+                  {selected.size ? `${selected.size} selected` : "Folders first"}
                 </span>
                 <div>
                   <button
@@ -1043,10 +970,7 @@ function App() {
                     aria-label="Next page"
                     disabled={!listing.next_token || busy}
                     onClick={() => {
-                      setTokens((current) => [
-                        ...current.slice(0, page + 1),
-                        listing.next_token!,
-                      ]);
+                      setTokens((current) => [...current.slice(0, page + 1), listing.next_token!]);
                       setPage((value) => value + 1);
                     }}
                   >
@@ -1058,9 +982,7 @@ function App() {
             <div className="transfer-hint">
               <span>
                 <UploadCloud size={16} />
-                <span>
-                  Drag & drop files anywhere to upload to this folder.
-                </span>
+                <span>Drag & drop files anywhere to upload to this folder.</span>
               </span>
               <label>
                 <input
@@ -1071,8 +993,7 @@ function App() {
                 Transfer through backend{" "}
                 <CircleHelp size={14}>
                   <title>
-                    Use for private endpoints or servers without browser CORS
-                    configuration.
+                    Use for private endpoints or servers without browser CORS configuration.
                   </title>
                 </CircleHelp>
               </label>
@@ -1101,9 +1022,7 @@ function App() {
               className="icon-button"
               title="Dismiss completed transfers"
               onClick={() =>
-                setTransfers((current) =>
-                  current.filter((item) => item.status === "uploading"),
-                )
+                setTransfers((current) => current.filter((item) => item.status === "uploading"))
               }
             >
               <X size={16} />
@@ -1131,8 +1050,7 @@ function App() {
               <small>
                 {item.status === "uploading"
                   ? `${item.progress}% · ${item.progress === 100 ? "Finishing…" : "Uploading"}`
-                  : (item.message ??
-                    (item.status === "done" ? "Upload complete" : "Canceled"))}
+                  : (item.message ?? (item.status === "done" ? "Upload complete" : "Canceled"))}
               </small>
               <div className="progress-track">
                 <i style={{ width: `${item.progress}%` }} />
@@ -1141,9 +1059,7 @@ function App() {
                 <button
                   className="text-button"
                   onClick={() => {
-                    setTransfers((current) =>
-                      current.filter((t) => t.id !== item.id),
-                    );
+                    setTransfers((current) => current.filter((t) => t.id !== item.id));
                     void startUpload([item.file], true, item);
                   }}
                 >
@@ -1260,27 +1176,15 @@ function App() {
           preview={modal.preview}
           onClose={() => setModal(null)}
           onCopy={() => void signed(modal.object)}
-          onVersions={() =>
-            setModal({ type: "versions", key: modal.object.key })
-          }
+          onVersions={() => setModal({ type: "versions", key: modal.object.key })}
         />
       )}
-      {modal?.type === "link" && (
-        <LinkModal signed={modal.signed} onClose={() => setModal(null)} />
-      )}
+      {modal?.type === "link" && <LinkModal signed={modal.signed} onClose={() => setModal(null)} />}
     </div>
   );
 }
 
-function Stat({
-  icon,
-  label,
-  value,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-}) {
+function Stat({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return (
     <div className="stat">
       <span className="stat-icon">{icon}</span>
@@ -1299,15 +1203,7 @@ function Loading({ label }: { label: string }) {
     </div>
   );
 }
-function Empty({
-  icon,
-  title,
-  text,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  text: string;
-}) {
+function Empty({ icon, title, text }: { icon: React.ReactNode; title: string; text: string }) {
   return (
     <div className="empty-state">
       <span>{icon}</span>
@@ -1428,8 +1324,7 @@ function ServerManager({
         text: `Connected successfully · ${result.bucket_count} buckets available`,
       });
     } catch (err) {
-      if (!pending.signal.aborted)
-        setTest({ text: (err as Error).message, error: true });
+      if (!pending.signal.aborted) setTest({ text: (err as Error).message, error: true });
     } finally {
       if (!pending.signal.aborted) setWorking(false);
     }
@@ -1489,10 +1384,7 @@ function ServerManager({
                   >
                     Remove
                   </button>
-                  <button
-                    className="text-button"
-                    onClick={() => setDeleting(null)}
-                  >
+                  <button className="text-button" onClick={() => setDeleting(null)}>
                     Cancel
                   </button>
                 </div>
@@ -1550,9 +1442,7 @@ function ServerManager({
               <input
                 required={!editing}
                 autoComplete="off"
-                placeholder={
-                  editing ? "Leave blank to keep current" : "Access key ID"
-                }
+                placeholder={editing ? "Leave blank to keep current" : "Access key ID"}
                 value={form.access_key}
                 onChange={(event) => {
                   setForm({ ...form, access_key: event.target.value });
@@ -1566,9 +1456,7 @@ function ServerManager({
                 required={!editing}
                 type="password"
                 autoComplete="new-password"
-                placeholder={
-                  editing ? "Leave blank to keep current" : "Secret access key"
-                }
+                placeholder={editing ? "Leave blank to keep current" : "Secret access key"}
                 value={form.secret_key}
                 onChange={(event) => {
                   setForm({ ...form, secret_key: event.target.value });
@@ -1588,16 +1476,11 @@ function ServerManager({
             />
             <span>
               Use path-style addressing
-              <small>
-                Recommended for MinIO and most S3-compatible providers.
-              </small>
+              <small>Recommended for MinIO and most S3-compatible providers.</small>
             </span>
           </label>
           {test && (
-            <div
-              className={`form-message ${test.error ? "error" : "success"}`}
-              role="status"
-            >
+            <div className={`form-message ${test.error ? "error" : "success"}`} role="status">
               {test.error ? <Info size={16} /> : <Check size={16} />}
               <span>{test.text}</span>
             </div>
@@ -1614,19 +1497,11 @@ function ServerManager({
               disabled={working || !form.endpoint_url || !form.name}
               onClick={() => void testConnection()}
             >
-              {working ? (
-                <LoaderCircle size={15} className="spin" />
-              ) : (
-                <ShieldCheck size={15} />
-              )}
+              {working ? <LoaderCircle size={15} className="spin" /> : <ShieldCheck size={15} />}
               Test connection
             </button>
             <button className="button primary" disabled={working}>
-              {working
-                ? "Please wait…"
-                : editing
-                  ? "Save changes"
-                  : "Add server"}
+              {working ? "Please wait…" : editing ? "Save changes" : "Add server"}
               <ArrowRight size={15} />
             </button>
           </div>
@@ -1636,13 +1511,7 @@ function ServerManager({
   );
 }
 
-function LinkModal({
-  signed,
-  onClose,
-}: {
-  signed: Signed;
-  onClose: () => void;
-}) {
+function LinkModal({ signed, onClose }: { signed: Signed; onClose: () => void }) {
   const field = useRef<HTMLTextAreaElement>(null);
   const [copied, setCopied] = useState(false);
   return (
@@ -1677,15 +1546,9 @@ function LinkModal({
               }
             }}
           >
-            {copied ? <Check size={15} /> : <Copy size={15} />}{" "}
-            {copied ? "Copied" : "Copy URL"}
+            {copied ? <Check size={15} /> : <Copy size={15} />} {copied ? "Copied" : "Copy URL"}
           </button>
-          <a
-            className="button primary"
-            href={signed.url}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
+          <a className="button primary" href={signed.url} target="_blank" rel="noopener noreferrer">
             <ArrowDownToLine size={15} />
             Open download
           </a>
@@ -1783,8 +1646,8 @@ function DeleteModal({
           ))}
         </div>
         <p className="muted">
-          On versioned buckets, S3 versioning rules apply. This action deletes
-          only the selected keys.
+          On versioned buckets, S3 versioning rules apply. This action deletes only the selected
+          keys.
         </p>
         {error && (
           <p className="error-text" role="alert">
@@ -1851,20 +1714,12 @@ function InspectModal({
         );
         setMetadata(result);
         const mime = result.content_type?.split(";")[0].toLowerCase() ?? "";
-        if (
-          result.size === 0 &&
-          ["text/plain", "text/csv", "application/json"].includes(mime)
-        ) {
+        if (result.size === 0 && ["text/plain", "text/csv", "application/json"].includes(mime)) {
           setText("");
           return;
         }
-        if (
-          /^image\/(png|jpeg|gif|webp|avif)$/.test(mime) &&
-          result.size > 1048576
-        ) {
-          setError(
-            "This image is too large to preview. Download it to view the full file.",
-          );
+        if (/^image\/(png|jpeg|gif|webp|avif)$/.test(mime) && result.size > 1048576) {
+          setError("This image is too large to preview. Download it to view the full file.");
           return;
         }
         if (
@@ -1879,15 +1734,12 @@ function InspectModal({
             "application/json",
           ].includes(mime)
         ) {
-          setError(
-            "Preview is unavailable for this file type. Download the object to open it.",
-          );
+          setError("Preview is unavailable for this file type. Download the object to open it.");
           return;
         }
-        const response = await fetch(
-          streamUrl(serverId, bucket, object.key, true),
-          { signal: controller.signal },
-        );
+        const response = await fetch(streamUrl(serverId, bucket, object.key, true), {
+          signal: controller.signal,
+        });
         if (!response.ok) throw new Error("Could not load preview");
         if (mime.startsWith("image/")) {
           blobUrl = URL.createObjectURL(await response.blob());
@@ -1913,17 +1765,11 @@ function InspectModal({
       onClose={onClose}
     >
       <div className="inspect-tabs">
-        <button
-          className={tab === "preview" ? "active" : ""}
-          onClick={() => setTab("preview")}
-        >
+        <button className={tab === "preview" ? "active" : ""} onClick={() => setTab("preview")}>
           <Eye size={15} />
           Preview
         </button>
-        <button
-          className={tab === "details" ? "active" : ""}
-          onClick={() => setTab("details")}
-        >
+        <button className={tab === "details" ? "active" : ""} onClick={() => setTab("details")}>
           <Info size={15} />
           Metadata
         </button>
@@ -1933,11 +1779,7 @@ function InspectModal({
           <Loading label="Loading object…" />
         ) : tab === "preview" ? (
           error ? (
-            <Empty
-              icon={<File size={30} />}
-              title="Preview unavailable"
-              text={error}
-            />
+            <Empty icon={<File size={30} />} title="Preview unavailable" text={error} />
           ) : image ? (
             <img className="image-preview" alt={object.key} src={image} />
           ) : (
@@ -1978,10 +1820,7 @@ function InspectModal({
           <Copy size={15} />
           Copy presigned URL
         </button>
-        <a
-          className="button primary"
-          href={streamUrl(serverId, bucket, object.key)}
-        >
+        <a className="button primary" href={streamUrl(serverId, bucket, object.key)}>
           <ArrowDownToLine size={15} />
           Download
         </a>

@@ -1,4 +1,3 @@
-import { useEffect, useRef, useState } from "react";
 import {
   ArrowDownToLine,
   History,
@@ -8,16 +7,17 @@ import {
   RotateCcw,
   Trash2,
 } from "lucide-react";
-import { Dialog } from "./Dialog";
+import { useEffect, useRef, useState } from "react";
 import {
   api,
   bucketPath,
   bytes,
   date,
-  streamUrl,
   type ObjectVersion,
+  streamUrl,
   type VersionListing,
 } from "./api";
+import { Dialog } from "./Dialog";
 
 interface FolderPreview {
   preview_token: string;
@@ -117,8 +117,7 @@ export function FolderDeleteModal({
           preview && (
             <>
               <p className="deletion-summary">
-                <strong>{preview.count.toLocaleString()} objects</strong> ·{" "}
-                {bytes(preview.size)}
+                <strong>{preview.count.toLocaleString()} objects</strong> · {bytes(preview.size)}
               </p>
               <div className="delete-list">
                 {preview.sample.map((key) => (
@@ -128,15 +127,12 @@ export function FolderDeleteModal({
                 ))}
               </div>
               {preview.count > preview.sample.length && (
-                <p className="muted">
-                  Showing the first {preview.sample.length} keys.
-                </p>
+                <p className="muted">Showing the first {preview.sample.length} keys.</p>
               )}
               <p className="muted">
-                Deletes only keys in this preview, including nested folders. New
-                keys added afterward are excluded. Existing versions are
-                retained according to S3 versioning rules. Preview expires{" "}
-                {date(preview.expires_at)}.
+                Deletes only keys in this preview, including nested folders. New keys added
+                afterward are excluded. Existing versions are retained according to S3 versioning
+                rules. Preview expires {date(preview.expires_at)}.
               </p>
               <label>
                 Type the complete folder prefix to confirm
@@ -168,9 +164,7 @@ export function FolderDeleteModal({
           </button>
           <button
             className="button danger"
-            disabled={
-              working || loading || !preview?.count || confirmation !== prefix
-            }
+            disabled={working || loading || !preview?.count || confirmation !== prefix}
           >
             <Trash2 size={15} />
             {working ? "Deleting…" : "Delete folder contents"}
@@ -199,9 +193,7 @@ export function VersionsModal({
   const [keyInput, setKeyInput] = useState(objectKey ?? "");
   const [exactKey, setExactKey] = useState(objectKey ?? "");
   const [versions, setVersions] = useState<ObjectVersion[]>([]);
-  const [next, setNext] = useState<{ key: string; version?: string } | null>(
-    null,
-  );
+  const [next, setNext] = useState<{ key: string; version?: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [working, setWorking] = useState(false);
@@ -223,9 +215,7 @@ export function VersionsModal({
       setVersions([]);
       setNext(null);
     }
-    const query = new URLSearchParams(
-      exactKey ? { key: exactKey } : { prefix },
-    );
+    const query = new URLSearchParams(exactKey ? { key: exactKey } : { prefix });
     if (marker) {
       query.set("keyMarker", marker.key);
       if (marker.version) query.set("versionIdMarker", marker.version);
@@ -331,9 +321,9 @@ export function VersionsModal({
           </button>
         </form>
         <p className="muted version-explanation">
-          Includes delete markers and objects hidden from the regular listing.
-          Restore creates a new current version; deleting a version or marker is
-          permanent. Your S3 account needs version-listing permissions.
+          Includes delete markers and objects hidden from the regular listing. Restore creates a new
+          current version; deleting a version or marker is permanent. Your S3 account needs
+          version-listing permissions.
         </p>
         {notice && (
           <p className="form-message success" role="status">
@@ -366,8 +356,7 @@ export function VersionsModal({
               {action.version.is_delete_marker && (
                 <>
                   <br />
-                  Removing a delete marker may make an earlier version visible
-                  again.
+                  Removing a delete marker may make an earlier version visible again.
                 </>
               )}
             </p>
@@ -432,9 +421,7 @@ export function VersionsModal({
                       )}
                     </div>
                   </td>
-                  <td>
-                    {version.is_delete_marker ? "—" : bytes(version.size)}
-                  </td>
+                  <td>{version.is_delete_marker ? "—" : bytes(version.size)}</td>
                   <td>{date(version.last_modified)}</td>
                   <td>
                     <div className="row-actions">
@@ -493,9 +480,7 @@ export function VersionsModal({
           </div>
         )}
         {!loading && !versions.length && !error && (
-          <p className="object-tool-status">
-            No versions found for this location.
-          </p>
+          <p className="object-tool-status">No versions found for this location.</p>
         )}
         <div className="version-pagination">
           <span>{versions.length} versions loaded</span>

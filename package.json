@@ -4,6 +4,7 @@
   "description": "A shared internal dashboard for AWS S3, MinIO, and other S3-compatible servers",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@11.23.0",
   "engines": {
     "node": ">=24"
   },
@@ -13,7 +14,12 @@
     "start": "node dist/server/index.js",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.server.json --noEmit",
     "test": "tsx --test tests/*.test.ts",
-    "test:browser": "playwright test"
+    "test:browser": "playwright test",
+    "lint": "biome lint .",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "check": "biome check .",
+    "check:fix": "biome check --write ."
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.0.0",
@@ -30,6 +36,7 @@
     "zod": "^4.0.0"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.6.2",
     "@playwright/test": "^1.0.0",
     "@tailwindcss/vite": "^4.0.0",
     "@types/better-sqlite3": "^7.6.0",

@@ -1,7 +1,7 @@
-import path from "node:path";
 import { rm } from "node:fs/promises";
-import { Store } from "../server/store.js";
+import path from "node:path";
 import { createApp } from "../server/app.js";
+import { Store } from "../server/store.js";
 
 const directory = path.resolve("test-results/browser-data");
 await rm(directory, { recursive: true, force: true });

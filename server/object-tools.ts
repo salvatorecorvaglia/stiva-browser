@@ -1,30 +1,24 @@
 import { randomUUID } from "node:crypto";
-import type { Express, Request } from "express";
-import { z } from "zod";
 import {
+  CopyObjectCommand,
+  DeleteObjectCommand,
+  DeleteObjectsCommand,
+  HeadObjectCommand,
   ListObjectsV2Command,
   ListObjectVersionsCommand,
-  DeleteObjectsCommand,
-  DeleteObjectCommand,
-  HeadObjectCommand,
-  CopyObjectCommand,
   type S3Client,
 } from "@aws-sdk/client-s3";
+import type { Express, Request } from "express";
+import { z } from "zod";
 import { HttpError } from "./errors.js";
 import { restoreVersion } from "./restore.js";
 
-type Using = <T>(
-  req: Request,
-  run: (client: S3Client) => Promise<T>,
-) => Promise<T>;
+type Using = <T>(req: Request, run: (client: S3Client) => Promise<T>) => Promise<T>;
 const key = z
   .string()
   .min(1)
   .max(1024)
-  .refine(
-    (value) => Buffer.byteLength(value) <= 1024,
-    "Key exceeds 1024 bytes",
-  );
+  .refine((value) => Buffer.byteLength(value) <= 1024, "Key exceeds 1024 bytes");
 const folder = key.refine(
   (value) => value.endsWith("/"),
   "A nonempty folder prefix ending in / is required",
@@ -53,8 +47,7 @@ export function registerObjectTools(
 ) {
   const snapshots = new Map<string, Snapshot>();
   const clean = () => {
-    for (const [id, item] of snapshots)
-      if (item.expires <= Date.now()) snapshots.delete(id);
+    for (const [id, item] of snapshots) if (item.expires <= Date.now()) snapshots.delete(id);
   };
 
   app.get("/api/buckets/:bucket/folders/delete-preview", async (req, res) => {
@@ -89,10 +82,7 @@ export function registerObjectTools(
           throw new HttpError(502, "Storage repeated a pagination token");
         if (token) seen.add(token);
         if (result.IsTruncated && !token)
-          throw new HttpError(
-            502,
-            "Storage omitted a required pagination token",
-          );
+          throw new HttpError(502, "Storage omitted a required pagination token");
       } while (token);
       return {
         objects: [...new Map(all.map((item) => [item.key, item])).values()],
@@ -105,10 +95,7 @@ export function registerObjectTools(
       0,
     );
     if (snapshots.size >= 100 || retainedKeys + objects.length > 20000)
-      throw new HttpError(
-        429,
-        "Too many active deletion previews. Wait five minutes and retry.",
-      );
+      throw new HttpError(429, "Too many active deletion previews. Wait five minutes and retry.");
     const token = randomUUID();
     const expires = Date.now() + 5 * 60 * 1000;
     snapshots.set(token, {
@@ -138,10 +125,7 @@ export function registerObjectTools(
       })
       .parse(req.body);
     if (input.confirmation !== input.prefix)
-      throw new HttpError(
-        400,
-        "Type the complete folder prefix to confirm deletion",
-      );
+      throw new HttpError(400, "Type the complete folder prefix to confirm deletion");
     clean();
     const snapshot = snapshots.get(input.preview_token);
     if (
@@ -162,10 +146,7 @@ export function registerObjectTools(
         );
       // Consume before the first write so concurrent submissions cannot repeat a versioned delete.
       if (snapshots.get(input.preview_token) !== snapshot)
-        throw new HttpError(
-          409,
-          "Deletion preview was already submitted. Preview again.",
-        );
+        throw new HttpError(409, "Deletion preview was already submitted. Preview again.");
       snapshots.delete(input.preview_token);
       const deleted: string[] = [];
       const errors: { key: string; code: string }[] = [];
@@ -179,15 +160,10 @@ export function registerObjectTools(
             }),
           );
           const successful = new Set(
-            (output.Deleted ?? []).flatMap((item) =>
-              item.Key ? [item.Key] : [],
-            ),
+            (output.Deleted ?? []).flatMap((item) => (item.Key ? [item.Key] : [])),
           );
           const failed = new Map(
-            (output.Errors ?? []).map((item) => [
-              item.Key,
-              item.Code ?? "StorageError",
-            ]),
+            (output.Errors ?? []).map((item) => [item.Key, item.Code ?? "StorageError"]),
           );
           for (const key of keys) {
             if (successful.has(key) && !failed.has(key)) deleted.push(key);
@@ -220,10 +196,7 @@ export function registerObjectTools(
       )
       .parse(req.query);
     if (input.key && input.keyMarker && input.keyMarker !== input.key)
-      throw new HttpError(
-        400,
-        "Version pagination marker must match the object key",
-      );
+      throw new HttpError(400, "Version pagination marker must match the object key");
     const result = await using(req, (client) =>
       client.send(
         new ListObjectVersionsCommand({
@@ -253,10 +226,7 @@ export function registerObjectTools(
         size: 0,
         last_modified: item.LastModified,
       })),
-    ].filter(
-      (item) =>
-        item.key && item.version_id && (!input.key || item.key === input.key),
-    );
+    ].filter((item) => item.key && item.version_id && (!input.key || item.key === input.key));
     const more =
       result.IsTruncated &&
       result.NextKeyMarker &&
@@ -270,9 +240,7 @@ export function registerObjectTools(
     res.json({
       versions,
       next_key_marker: more ? result.NextKeyMarker : null,
-      next_version_id_marker: more
-        ? (result.NextVersionIdMarker ?? null)
-        : null,
+      next_version_id_marker: more ? (result.NextVersionIdMarker ?? null) : null,
     });
   });
 
@@ -300,17 +268,9 @@ export function registerObjectTools(
     res.once("close", closed);
     try {
       const result = await using(req, (client) =>
-        restoreVersion(
-          client,
-          bucket,
-          input.key,
-          input.versionId,
-          controller.signal,
-        ),
+        restoreVersion(client, bucket, input.key, input.versionId, controller.signal),
       );
-      res
-        .status(201)
-        .json({ key: input.key, version_id: result.VersionId ?? null });
+      res.status(201).json({ key: input.key, version_id: result.VersionId ?? null });
     } finally {
       res.off("close", closed);
     }

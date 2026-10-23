@@ -6,20 +6,21 @@
 
 ## Run locally
 
-Requires Node.js 24 or later.
+Requires Node.js 24 or later and pnpm 11.23.0 (`corepack enable` enables the pinned package manager).
 
 ```sh
-npm ci
-npm run dev
+pnpm install --frozen-lockfile
+pnpm dev
 ```
 
 Open http://localhost:5173. Vite proxies `/api` to Express on port 3000. Select **Manage servers**, enter your endpoint, region, access key and secret key, test the connection, and save. AWS endpoints usually use virtual-host addressing; disable path style if your provider requires it. MinIO usually uses path-style addressing.
 
 ```sh
-npm run typecheck
-npm test
-npm run build
-npm start
+pnpm check
+pnpm typecheck
+pnpm test
+pnpm build
+pnpm start
 ```
 
 Production serves both the dashboard and API at http://localhost:3000. Runtime settings are `PORT` (default `3000`), `DATA_DIR` (default `./data`), and optional `DB_URI` for PostgreSQL. Without `DB_URI`, SQLite is used. The encryption key always remains in the data directory, including with PostgreSQL.
@@ -31,10 +32,9 @@ Set `DB_URI` to a `postgresql://` or `postgres://` connection URI before startin
 Keep `/data` persisted when using PostgreSQL: losing `master.key` still prevents decryption. Continue using one application replica unless all instances are provisioned with the same key and appropriate shared storage. Deletion previews are process-local and expire on restart.
 
 To move an existing SQLite installation to an **empty** PostgreSQL database:
-
 1. Stop the application and back up the existing data directory.
 2. Set `DATA_DIR` to that directory and `DB_URI` to the destination database.
-3. Run `npm run build`, then `node dist/server/migrate.js` (inside Docker, use the same image, environment, and data mount, overriding the command).
+3. Run `pnpm build`, then `node dist/server/migrate.js` (inside Docker, use the same image, environment, and data mount, overriding the command).
 4. Start the application with `DB_URI` and the same `DATA_DIR`.
 
 The migration copies encrypted records in a transaction, retains their IDs and timestamps, and does not delete SQLite or replace the key. It refuses a nonempty destination. Selecting PostgreSQL without running this migration opens a separate database; configurations are not transferred automatically. For PostgreSQL backups, retain a database backup such as `pg_dump` **and** the matching master key.
@@ -134,11 +134,15 @@ Metadata, backend download/preview, and presigned download routes also accept an
 
 All bucket/object/transfer routes require `x-s3-server-id: <id>` or `?serverId=<id>`. Conflicting identifiers are rejected. URL-encode bucket names and keys. HTTP(S) endpoints may include a base path but cannot embed credentials, query strings, or fragments.
 
+Biome handles linting and formatting. Run `pnpm check` to check both, `pnpm lint` for linting only, `pnpm format:check` to verify formatting, or `pnpm format` to format files. `pnpm check:fix` applies safe lint, import, and formatting fixes.
+
+Existing React hook dependencies, button types, and static-element interaction findings are temporarily reported as warnings in `biome.json`; the remaining recommended rules keep their default severity.
+
 ## Verification
 
-`npm test` runs isolated API/persistence tests with temporary databases. To run live tests against two disposable S3-compatible endpoints, set `STIVA_TEST_S3_A` and `STIVA_TEST_S3_B`, plus `STIVA_TEST_ACCESS_KEY` and `STIVA_TEST_SECRET_KEY`, then run `npm test`. These are **test-harness settings only**; the application never reads S3 credential environment variables. The fixture credentials are registered through the API and cleaned up with the temporary database. Tests create uniquely named buckets and remove them afterward.
+`pnpm test` runs isolated API/persistence tests with temporary databases. To run live tests against two disposable S3-compatible endpoints, set `STIVA_TEST_S3_A` and `STIVA_TEST_S3_B`, plus `STIVA_TEST_ACCESS_KEY` and `STIVA_TEST_SECRET_KEY`, then run `pnpm test`. These are **test-harness settings only**; the application never reads S3 credential environment variables. The fixture credentials are registered through the API and cleaned up with the temporary database. Tests create uniquely named buckets and remove them afterward.
 
-`npm run test:browser` runs Chromium UI checks using mocked S3 responses and a real local backend/database. Install the browser once with `npx playwright install chromium`. Browser test data lives in ignored `test-results/`.
+`ppnpm test:browser` runs Chromium UI checks using mocked S3 responses and a real local backend/database. Install the browser once with `pnpm exec playwright install chromium`. Browser test data lives in ignored `test-results/`.
 
 After building `stiva-browser:1.0.0`, `node tests/container-smoke.mjs` verifies the image's non-root user, read-only root filesystem, static UI, encrypted database, and restart persistence. It creates and removes its own disposable container and volume.
 

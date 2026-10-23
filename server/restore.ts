@@ -5,8 +5,8 @@ import {
   CreateMultipartUploadCommand,
   GetObjectTaggingCommand,
   HeadObjectCommand,
-  UploadPartCopyCommand,
   type S3Client,
+  UploadPartCopyCommand,
 } from "@aws-sdk/client-s3";
 import { HttpError } from "./errors.js";
 
@@ -23,10 +23,7 @@ export async function restoreVersion(
     { abortSignal: signal },
   );
   if (metadata.DeleteMarker)
-    throw new HttpError(
-      409,
-      "Delete markers cannot be restored as file contents",
-    );
+    throw new HttpError(409, "Delete markers cannot be restored as file contents");
   const source = `${encodeURIComponent(bucket)}/${key.split("/").map(encodeURIComponent).join("/")}?versionId=${encodeURIComponent(versionId)}`;
   const size = metadata.ContentLength ?? 0;
   if (size <= 5 * 1024 ** 3) {
@@ -42,12 +39,8 @@ export async function restoreVersion(
       { abortSignal: signal },
     );
   }
-  const partSize = Math.max(
-    64 * 1024 ** 2,
-    Math.ceil(size / 10000 / 1024 ** 2) * 1024 ** 2,
-  );
-  if (partSize > 5 * 1024 ** 3)
-    throw new HttpError(413, "Object exceeds S3 multipart copy limits");
+  const partSize = Math.max(64 * 1024 ** 2, Math.ceil(size / 10000 / 1024 ** 2) * 1024 ** 2);
+  if (partSize > 5 * 1024 ** 3) throw new HttpError(413, "Object exceeds S3 multipart copy limits");
   const tags = await client.send(
     new GetObjectTaggingCommand({
       Bucket: bucket,
@@ -72,56 +65,44 @@ export async function restoreVersion(
       SSEKMSKeyId: metadata.SSEKMSKeyId,
       BucketKeyEnabled: metadata.BucketKeyEnabled,
       Tagging: tags.TagSet?.length
-        ? new URLSearchParams(
-            tags.TagSet.map((tag) => [tag.Key!, tag.Value!]),
-          ).toString()
+        ? new URLSearchParams(tags.TagSet.map((tag) => [tag.Key!, tag.Value!])).toString()
         : undefined,
     }),
     { abortSignal: signal },
   );
   if (!created.UploadId)
-    throw new HttpError(
-      502,
-      "Storage did not return a multipart upload identifier",
-    );
+    throw new HttpError(502, "Storage did not return a multipart upload identifier");
   const uploadId = created.UploadId;
   try {
     const parts: { ETag: string; PartNumber: number }[] = [];
     const count = Math.ceil(size / partSize);
     for (let index = 0; index < count; index += 2) {
       const results = await Promise.allSettled(
-        Array.from(
-          { length: Math.min(2, count - index) },
-          async (_, offset) => {
-            const partIndex = index + offset;
-            const result = await client.send(
-              new UploadPartCopyCommand({
-                Bucket: bucket,
-                Key: key,
-                UploadId: uploadId,
-                PartNumber: partIndex + 1,
-                CopySource: source,
-                CopySourceIfMatch: metadata.ETag,
-                CopySourceRange: `bytes=${partIndex * partSize}-${Math.min(size - 1, (partIndex + 1) * partSize - 1)}`,
-              }),
-              { abortSignal: signal },
-            );
-            if (!result.CopyPartResult?.ETag)
-              throw new HttpError(
-                502,
-                "Storage did not return a copied-part checksum",
-              );
-            return {
-              ETag: result.CopyPartResult.ETag,
+        Array.from({ length: Math.min(2, count - index) }, async (_, offset) => {
+          const partIndex = index + offset;
+          const result = await client.send(
+            new UploadPartCopyCommand({
+              Bucket: bucket,
+              Key: key,
+              UploadId: uploadId,
               PartNumber: partIndex + 1,
-            };
-          },
-        ),
+              CopySource: source,
+              CopySourceIfMatch: metadata.ETag,
+              CopySourceRange: `bytes=${partIndex * partSize}-${Math.min(size - 1, (partIndex + 1) * partSize - 1)}`,
+            }),
+            { abortSignal: signal },
+          );
+          if (!result.CopyPartResult?.ETag)
+            throw new HttpError(502, "Storage did not return a copied-part checksum");
+          return {
+            ETag: result.CopyPartResult.ETag,
+            PartNumber: partIndex + 1,
+          };
+        }),
       );
       const failed = results.find((result) => result.status === "rejected");
       if (failed?.status === "rejected") throw failed.reason;
-      for (const result of results)
-        if (result.status === "fulfilled") parts.push(result.value);
+      for (const result of results) if (result.status === "fulfilled") parts.push(result.value);
     }
     return await client.send(
       new CompleteMultipartUploadCommand({
