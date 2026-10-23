@@ -126,7 +126,6 @@ jobs:
           images: corvaglia91/stiva-browser
           tags: type=semver,pattern={{version}}
 
-      # Each platform builds and runs its smoke test on matching hardware.
       - name: Build and load native image
         uses: docker/build-push-action@v7
         with:
@@ -243,7 +242,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ github.token }}
 
-      # Assemble release indexes from the exact digests tested on native runners.
       - name: Publish multi-platform images to both registries
         env:
           IMAGE_TAGS: ${{ steps.meta.outputs.tags }}
