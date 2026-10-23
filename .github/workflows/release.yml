@@ -96,14 +96,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          IMAGE: ${{ steps.version.outputs.image }}
           PRERELEASE: ${{ steps.version.outputs.prerelease }}
         run: |
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             echo "Release $RELEASE_TAG already exists."
             exit 0
           fi
-          printf '\nContainer image (linux/amd64): `%s:%s`\n' "$IMAGE" "$RELEASE_TAG" >> "$RUNNER_TEMP/release-notes.md"
           args=(--verify-tag --title "Stiva Browser $RELEASE_TAG" --notes-file "$RUNNER_TEMP/release-notes.md")
           if [ "$PRERELEASE" = true ]; then
             args+=(--prerelease)
