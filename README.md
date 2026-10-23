@@ -163,16 +163,33 @@ the database with its matching master key. Retain the previous application image
 Monitor storage failures, cleanup failures, active work, latency, 429 responses, and container memory.
 The database schema and credential encryption format remain compatible with existing installations.
 
-Run `pnpm test:staging` after building the application and S3 fixture images. It provisions an isolated
+Run `pnpm test:staging` after building the application image as `stiva-browser:ci` (or setting
+`CONTAINER_IMAGE`) and the S3 fixture image. The container smoke test uses the same image setting.
+It provisions an isolated
 local Docker environment with HTTPS, an authentication proxy, Prometheus, disposable S3 storage,
 SQLite and PostgreSQL. It verifies four concurrent uploads under a 512 MiB memory limit, excess-work
 rejection, read latency, SHA-256 integrity, cleanup alerting, redacted logs, image rollback, and backup
 restoration. Measurements are written to `test-results/staging-report.json`; all owned containers,
 volumes, networks, and temporary baseline image tags are removed afterward. It never uses a live
-cluster or existing data volume. By default it builds the baseline from HEAD for a dirty working tree,
-or HEAD^ for a clean checkout; set `STIVA_BASELINE_REF` or `STIVA_BASELINE_IMAGE` to test a specific
+cluster or existing data volume. By default it searches first-parent history starting at HEAD for a
+dirty working tree, or HEAD^ for a clean checkout, building until it finds an image distinct from the
+candidate. Fetch full Git history for this search; set `STIVA_BASELINE_REF` or `STIVA_BASELINE_IMAGE` to test a specific
 previous release. A baseline image must differ from the candidate. See [monitoring](monitoring/README.md)
 and the [incremental implementation and validation record](docs/remediation.md).
+
+CI runs on pull requests, pushes to `main`, manual dispatch, and release workflow calls. Workflow
+validation, lint/types/coverage, dependency auditing, integration tests, browser tests, and container
+staging run independently. The final `Lint, test, and build` check requires every job to succeed and
+keeps the existing branch-protection check name. Dependency audits include development packages;
+image scans cover OS and application packages. High or critical vulnerabilities block CI and release
+image publication, including vulnerabilities without a fix. Dependabot proposes weekly updates for
+the pinned GitHub Actions commits, npm dependencies, and Docker base images.
+
+Release publication is serialized across versions. Only the highest stable SemVer Git tag may
+update Docker Hub and GHCR `latest`; older releases and prereleases still publish versioned tags.
+A newer stable tag prevents an older release from updating `latest` even if the newer release has
+not finished. GitHub's tag lookup must succeed before publication. Run
+`node --test tests/release-latest.test.mjs` to verify version ordering and rerun behavior.
 
 ---
 

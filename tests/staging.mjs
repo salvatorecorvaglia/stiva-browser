@@ -19,7 +19,7 @@ import {
 const root = process.cwd();
 const suffix = randomUUID().slice(0, 12);
 const prefix = `stiva-stage-${suffix}`;
-const candidate = process.env.CONTAINER_IMAGE ?? "stiva-browser:1.1.0";
+const candidate = process.env.CONTAINER_IMAGE ?? "stiva-browser:ci";
 const storageImage = process.env.STIVA_TEST_S3_IMAGE ?? "stiva-s3-fixture:2025-10-15";
 const prometheusImage =
   process.env.STIVA_PROMETHEUS_IMAGE ??
@@ -345,23 +345,51 @@ let prometheusBase;
 let proxyAddress;
 const bucket = `stiva-stage-${suffix}`;
 try {
+  const candidateId = docker("image", "inspect", "--format", "{{.Id}}", candidate);
   let baseline = process.env.STIVA_BASELINE_IMAGE;
   if (!baseline) {
     const dirty = execFileSync("git", ["status", "--porcelain"], { encoding: "utf8" }).trim();
-    const ref = process.env.STIVA_BASELINE_REF ?? (dirty ? "HEAD" : "HEAD^");
-    report.baselineRef = execFileSync("git", ["rev-parse", ref], { encoding: "utf8" }).trim();
+    const explicitRef = process.env.STIVA_BASELINE_REF;
+    const refs = execFileSync(
+      "git",
+      explicitRef
+        ? ["rev-parse", "--verify", `${explicitRef}^{commit}`]
+        : ["rev-list", "--first-parent", dirty ? "HEAD" : "HEAD^"],
+      { encoding: "utf8" },
+    )
+      .trim()
+      .split("\n")
+      .filter(Boolean);
     const directory = path.join(temporary, "baseline");
-    await mkdir(directory);
     const archive = path.join(temporary, "baseline.tar");
-    await writeFile(archive, execFileSync("git", ["archive", ref]));
-    execFileSync("tar", ["-xf", archive, "-C", directory]);
     baseline = `${prefix}-baseline:local`;
     ownedBaseline = baseline;
-    execFileSync("docker", ["build", "-t", baseline, directory], { stdio: "inherit" });
+    report.baseline = baseline;
+    let distinct = false;
+    for (const ref of refs) {
+      report.baselineRef = ref;
+      await rm(directory, { recursive: true, force: true });
+      await mkdir(directory);
+      await writeFile(archive, execFileSync("git", ["archive", ref]));
+      execFileSync("tar", ["-xf", archive, "-C", directory]);
+      execFileSync("docker", ["build", "-t", baseline, directory], { stdio: "inherit" });
+      if (docker("image", "inspect", "--format", "{{.Id}}", baseline) !== candidateId) {
+        distinct = true;
+        break;
+      }
+      if (explicitRef) break;
+      console.log(`Baseline ${ref} matches the candidate; trying an older revision.`);
+    }
+    assert.ok(
+      distinct,
+      explicitRef
+        ? "Rollback requires a distinct baseline image; STIVA_BASELINE_REF matches the candidate"
+        : "No distinct baseline image found; fetch more Git history or set STIVA_BASELINE_IMAGE",
+    );
   }
   report.baseline = baseline;
   assert.notEqual(
-    docker("image", "inspect", "--format", "{{.Id}}", candidate),
+    candidateId,
     docker("image", "inspect", "--format", "{{.Id}}", baseline),
     "Rollback requires a distinct baseline image",
   );
