@@ -20,7 +20,7 @@ jobs:
   release:
     name: Publish release
     needs: verify
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
       contents: write
@@ -51,6 +51,21 @@ jobs:
           if (tag !== `v${version}`) throw new Error(`Tag ${tag} must match package.json version ${version}.`);
           const image = `ghcr.io/${process.env.GITHUB_REPOSITORY.toLowerCase()}`;
           appendFileSync(process.env.GITHUB_OUTPUT, `image=${image}\nprerelease=${Boolean(match[4])}\n`);
+          NODE
+
+      - name: Prepare release notes from changelog
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync, writeFileSync } from 'node:fs';
+          import { join } from 'node:path';
+          const version = process.env.RELEASE_TAG.slice(1);
+          const lines = readFileSync('CHANGELOG.md', 'utf8').split(/\r?\n/);
+          const start = lines.findIndex(line => line === `## [${version}]` || line.startsWith(`## [${version}] - `));
+          if (start === -1) throw new Error(`CHANGELOG.md is missing a section for ${version}.`);
+          const next = lines.findIndex((line, index) => index > start && /^##\s/.test(line));
+          const notes = lines.slice(start + 1, next === -1 ? undefined : next).join('\n').trim();
+          if (!notes) throw new Error(`CHANGELOG.md section for ${version} is empty.`);
+          writeFileSync(join(process.env.RUNNER_TEMP, 'release-notes.md'), `${notes}\n`);
           NODE
 
       - name: Build release image
@@ -88,8 +103,8 @@ jobs:
             echo "Release $RELEASE_TAG already exists."
             exit 0
           fi
-          printf 'Container image (linux/amd64): `%s:%s`\n' "$IMAGE" "$RELEASE_TAG" > "$RUNNER_TEMP/release-notes.md"
-          args=(--verify-tag --title "$RELEASE_TAG" --generate-notes --notes-file "$RUNNER_TEMP/release-notes.md")
+          printf '\nContainer image (linux/amd64): `%s:%s`\n' "$IMAGE" "$RELEASE_TAG" >> "$RUNNER_TEMP/release-notes.md"
+          args=(--verify-tag --title "Stiva Browser $RELEASE_TAG" --notes-file "$RUNNER_TEMP/release-notes.md")
           if [ "$PRERELEASE" = true ]; then
             args+=(--prerelease)
           fi
