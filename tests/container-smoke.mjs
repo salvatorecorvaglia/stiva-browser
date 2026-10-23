@@ -5,7 +5,7 @@ import { setTimeout as delay } from "node:timers/promises";
 
 const name = `stiva-smoke-${randomUUID().slice(0, 12)}`;
 const volume = `${name}-data`;
-const image = process.env.CONTAINER_IMAGE || "stiva-browser:1.0.0";
+const image = process.env.CONTAINER_IMAGE || "stiva-browser:1.1.0";
 const platform = process.env.CONTAINER_PLATFORM;
 const docker = (...args) =>
   execFileSync("docker", args, {

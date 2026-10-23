@@ -19,7 +19,7 @@ import {
 const root = process.cwd();
 const suffix = randomUUID().slice(0, 12);
 const prefix = `stiva-stage-${suffix}`;
-const candidate = process.env.CONTAINER_IMAGE ?? "stiva-browser:1.0.0";
+const candidate = process.env.CONTAINER_IMAGE ?? "stiva-browser:1.1.0";
 const storageImage = process.env.STIVA_TEST_S3_IMAGE ?? "stiva-s3-fixture:2025-10-15";
 const prometheusImage =
   process.env.STIVA_PROMETHEUS_IMAGE ??

@@ -1,6 +1,6 @@
 {
   "name": "stiva-browser",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "A shared internal dashboard for AWS S3, MinIO, and other S3-compatible servers",
   "private": true,
   "type": "module",

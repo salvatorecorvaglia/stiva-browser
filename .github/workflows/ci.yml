@@ -73,7 +73,7 @@ jobs:
           retention-days: 7
 
       - name: Build container image
-        run: docker build --tag stiva-browser:1.0.0 .
+        run: docker build --tag stiva-browser:1.1.0 .
 
       - name: Test container security and persistence
         run: node tests/container-smoke.mjs
