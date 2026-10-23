@@ -1,0 +1,96 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: CI
+    uses: ./.github/workflows/ci.yml
+
+  release:
+    name: Publish release
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      packages: write
+    env:
+      RELEASE_TAG: ${{ github.ref_name }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Validate release version
+        id: version
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync, appendFileSync } from 'node:fs';
+          const tag = process.env.RELEASE_TAG;
+          const match = /^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?$/.exec(tag);
+          if (!match) throw new Error('Expected vMAJOR.MINOR.PATCH or a SemVer prerelease tag.');
+          const { version } = JSON.parse(readFileSync('package.json', 'utf8'));
+          if (tag !== `v${version}`) throw new Error(`Tag ${tag} must match package.json version ${version}.`);
+          const image = `ghcr.io/${process.env.GITHUB_REPOSITORY.toLowerCase()}`;
+          appendFileSync(process.env.GITHUB_OUTPUT, `image=${image}\nprerelease=${Boolean(match[4])}\n`);
+          NODE
+
+      - name: Build release image
+        env:
+          IMAGE: ${{ steps.version.outputs.image }}
+        run: |
+          docker build \
+            --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            --label "org.opencontainers.image.version=$RELEASE_TAG" \
+            --tag "$IMAGE:$RELEASE_TAG" .
+
+      - name: Publish image to GHCR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGE: ${{ steps.version.outputs.image }}
+          PRERELEASE: ${{ steps.version.outputs.prerelease }}
+        run: |
+          echo "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          trap 'docker logout ghcr.io' EXIT
+          docker push "$IMAGE:$RELEASE_TAG"
+          if [ "$PRERELEASE" = false ]; then
+            docker tag "$IMAGE:$RELEASE_TAG" "$IMAGE:latest"
+            docker push "$IMAGE:latest"
+          fi
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          IMAGE: ${{ steps.version.outputs.image }}
+          PRERELEASE: ${{ steps.version.outputs.prerelease }}
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists."
+            exit 0
+          fi
+          printf 'Container image (linux/amd64): `%s:%s`\n' "$IMAGE" "$RELEASE_TAG" > "$RUNNER_TEMP/release-notes.md"
+          args=(--verify-tag --title "$RELEASE_TAG" --generate-notes --notes-file "$RUNNER_TEMP/release-notes.md")
+          if [ "$PRERELEASE" = true ]; then
+            args+=(--prerelease)
+          fi
+          gh release create "$RELEASE_TAG" "${args[@]}"
