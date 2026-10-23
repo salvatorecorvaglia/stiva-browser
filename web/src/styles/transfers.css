@@ -1,0 +1,114 @@
+.transfers {
+  position: fixed;
+  bottom: 22px;
+  right: 24px;
+  z-index: 45;
+  width: 340px;
+  background: white;
+  border: 1px solid #e1eae5;
+  border-radius: 10px;
+  box-shadow: 0 10px 40px #1435231a;
+  max-height: 55vh;
+  overflow: auto;
+}
+.transfers-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 15px;
+  border-bottom: 1px solid #edf2ee;
+}
+.transfers-heading strong {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 12px;
+  font-weight: 550;
+  color: #587b64;
+}
+.transfer-item {
+  padding: 12px 15px;
+  border-bottom: 1px solid #edf1ee;
+}
+.transfer-item > div:first-child {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--color-success);
+}
+.transfer-item strong {
+  font-size: 10px;
+  font-weight: 500;
+  color: #597361;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.transfer-item small {
+  font-size: 11px;
+  color: var(--color-muted);
+  line-height: 1.7;
+  display: block;
+  overflow-wrap: anywhere;
+  margin: 5px 0;
+}
+.transfer-item .text-button {
+  margin-top: 7px;
+}
+.progress-track {
+  background: #edf4ef;
+  height: 3px;
+  border-radius: 5px;
+  overflow: hidden;
+}
+.progress-track i {
+  display: block;
+  background: #4ea67d;
+  height: 100%;
+  transition: var(--motion-transition, width 0.2s);
+}
+.toast {
+  position: fixed;
+  bottom: 25px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: white;
+  border: 1px solid #dcebe1;
+  box-shadow: 0 5px 30px #1a3e2520;
+  border-radius: 8px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  z-index: 80;
+  font-size: 11px;
+  color: #477d5d;
+  max-width: calc(100vw - 35px);
+}
+.toast > svg {
+  flex-shrink: 0;
+}
+.toast.error {
+  color: var(--color-danger);
+  border-color: #f1dcd6;
+}
+.toast .icon-button {
+  width: 22px;
+  height: 22px;
+}
+@media (max-width: 680px) {
+  .transfers {
+    bottom: 15px;
+    right: 12px;
+    width: calc(100vw - 24px);
+    max-width: 340px;
+  }
+  .toast {
+    bottom: 16px;
+    font-size: 10px;
+  }
+}
+.transfer-destination {
+  color: var(--color-muted);
+}

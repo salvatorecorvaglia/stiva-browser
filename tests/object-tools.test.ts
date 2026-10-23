@@ -9,6 +9,7 @@ import request from "supertest";
 import { createApp } from "../server/app.js";
 import { restoreVersion } from "../server/restore.js";
 import { Store } from "../server/store.js";
+import { type S3Call as Call, mockSend, required, type S3Handler } from "./helpers.js";
 
 const config = {
   name: "Fixture",
@@ -18,8 +19,7 @@ const config = {
   secret_key: "fixture-secret",
   force_path_style: true,
 };
-type Call = { name: string; input: any };
-async function fixture(t: TestContext, handler: (call: Call) => any | Promise<any>) {
+async function fixture(t: TestContext, handler: S3Handler) {
   const directory = await mkdtemp(path.join(os.tmpdir(), "stiva-tools-"));
   const store = await Store.open(directory);
   const calls: Call[] = [];
@@ -31,11 +31,10 @@ async function fixture(t: TestContext, handler: (call: Call) => any | Promise<an
         forcePathStyle: true,
         credentials,
       });
-      client.send = (async (command: any) => {
-        const call = { name: command.constructor.name, input: command.input };
+      mockSend(client, (call) => {
         calls.push(call);
         return handler(call);
-      }) as unknown as S3Client["send"];
+      });
       return client;
     },
   });
@@ -67,7 +66,7 @@ test("recursive deletion previews all pages, binds a one-use snapshot, and repor
           };
     if (name === "DeleteObjectsCommand")
       return {
-        Deleted: input.Delete.Objects.filter((item: any) => item.Key !== "folder/denied"),
+        Deleted: required(input.Delete?.Objects).filter((item) => item.Key !== "folder/denied"),
         Errors: [{ Key: "folder/denied", Code: "AccessDenied" }],
       };
     throw new Error(name);
@@ -179,7 +178,7 @@ test("recursive deletion chunks at 1000 and includes failed batches in the resul
       };
     if (name === "DeleteObjectsCommand") {
       if (++batch === 2) throw new Error("upstream failure");
-      return { Deleted: input.Delete.Objects };
+      return { Deleted: required(input.Delete?.Objects) };
     }
     throw new Error(name);
   });
@@ -203,7 +202,7 @@ test("recursive deletion chunks at 1000 and includes failed batches in the resul
   assert.deepEqual(
     calls
       .filter((call) => call.name === "DeleteObjectsCommand")
-      .map((call) => call.input.Delete.Objects.length),
+      .map((call) => required(call.input.Delete?.Objects).length),
     [1000, 1000, 5],
   );
 });
@@ -214,7 +213,7 @@ test("version history returns markers, preserves pagination, and scopes exact ke
     return {
       Versions: [
         { Key: "a.txt", VersionId: "v1", Size: 8 },
-        { Key: "a.txt-neighbor", VersionId: "neighbor" },
+        ...(input.KeyMarker ? [{ Key: "a.txt-neighbor", VersionId: "neighbor" }] : []),
       ],
       DeleteMarkers: [{ Key: "a.txt", VersionId: "marker", IsLatest: true }],
       IsTruncated: !input.KeyMarker,
@@ -228,7 +227,7 @@ test("version history returns markers, preserves pagination, and scopes exact ke
     .set("x-s3-server-id", id)
     .expect(200);
   assert.equal(result.body.versions.length, 2);
-  assert.equal(result.body.versions[1].is_delete_marker, true);
+  assert.equal(result.body.versions[0].is_delete_marker, true);
   assert.equal(result.body.next_key_marker, "a.txt");
   assert.equal(result.body.next_version_id_marker, "v1");
   await request(app)
@@ -236,12 +235,14 @@ test("version history returns markers, preserves pagination, and scopes exact ke
     .query({ key: "a.txt", keyMarker: "a.txt", versionIdMarker: "v1" })
     .set("x-s3-server-id", id)
     .expect(200);
-  assert.equal(calls[1].input.VersionIdMarker, "v1");
+  const continued = required(calls[1]);
+  assert.equal(continued.name, "ListObjectVersionsCommand");
+  assert.equal(continued.input.VersionIdMarker, "v1");
   await request(app)
     .get("/api/buckets/data/versions")
-    .query({ key: "a.txt", keyMarker: "other" })
+    .query({ key: "a.txt", keyMarker: "a.txt[minio_cache:v2,return:]", versionIdMarker: "v1" })
     .set("x-s3-server-id", id)
-    .expect(400);
+    .expect(200);
 });
 
 test("version delete requires exact confirmation, restore copies the selected version, and reads retain versionId", async (t) => {
@@ -277,14 +278,16 @@ test("version delete requires exact confirmation, restore copies the selected ve
     .set("x-s3-server-id", id)
     .send(body)
     .expect(200);
-  assert.equal(calls[0].input.VersionId, "old+id");
+  const removed = required(calls[0]);
+  assert.equal(removed.name, "DeleteObjectCommand");
+  assert.equal(removed.input.VersionId, "old+id");
   const result = await request(app)
     .post("/api/buckets/data/versions/restore")
     .set("x-s3-server-id", id)
     .send(body)
     .expect(201);
   assert.equal(result.body.version_id, "new-version");
-  const copy = calls.find((call) => call.name === "CopyObjectCommand")!;
+  const copy = required(calls.find((call) => call.name === "CopyObjectCommand"));
   assert.equal(
     copy.input.CopySource,
     "data/folder/space%20%2B%20%E6%97%A5%E6%9C%AC%E8%AA%9E.txt?versionId=old%2Bid",
@@ -304,7 +307,10 @@ test("version delete requires exact confirmation, restore copies the selected ve
       serverId: id,
     })
     .expect(200);
-  assert.equal(calls.find((call) => call.name === "GetObjectCommand")!.input.VersionId, "old+id");
+  assert.equal(
+    required(calls.find((call) => call.name === "GetObjectCommand")).input.VersionId,
+    "old+id",
+  );
   await request(app)
     .post("/api/presigned-url/upload")
     .set("x-s3-server-id", id)
@@ -320,10 +326,9 @@ test("large restore copies bounded ranges and aborts failed multipart copies", a
     credentials: { accessKeyId: "a", secretAccessKey: "b" },
   });
   const size = 5 * 1024 ** 3 + 1;
-  client.send = (async (command: any) => {
-    const name = command.constructor.name;
-    const input = command.input;
-    calls.push({ name, input });
+  mockSend(client, (call) => {
+    const { name, input } = call;
+    calls.push(call);
     if (name === "HeadObjectCommand")
       return {
         ContentLength: size,
@@ -340,7 +345,7 @@ test("large restore copies bounded ranges and aborts failed multipart copies", a
     if (name === "CompleteMultipartUploadCommand") return { VersionId: "restored" };
     if (name === "AbortMultipartUploadCommand") return {};
     throw new Error(name);
-  }) as unknown as S3Client["send"];
+  });
   try {
     const result = await restoreVersion(
       client,
@@ -353,9 +358,9 @@ test("large restore copies bounded ranges and aborts failed multipart copies", a
     const parts = calls.filter((call) => call.name === "UploadPartCopyCommand");
     assert.equal(parts.length, 81);
     assert.equal(parts[0].input.CopySourceRange, "bytes=0-67108863");
-    assert.equal(parts.at(-1)!.input.CopySourceRange, `bytes=${size - 1}-${size - 1}`);
+    assert.equal(required(parts.at(-1)).input.CopySourceRange, `bytes=${size - 1}-${size - 1}`);
     assert.equal(
-      calls.find((call) => call.name === "CreateMultipartUploadCommand")!.input.Tagging,
+      required(calls.find((call) => call.name === "CreateMultipartUploadCommand")).input.Tagging,
       "label=old+version",
     );
     fail = true;
@@ -376,7 +381,7 @@ test("deletion previews cannot be submitted concurrently or after expiration", a
     if (name === "ListObjectsV2Command") return { Contents: [{ Key: "folder/a.txt", Size: 1 }] };
     if (name === "DeleteObjectsCommand") {
       await new Promise((resolve) => setTimeout(resolve, 10));
-      return { Deleted: input.Delete.Objects };
+      return { Deleted: required(input.Delete?.Objects) };
     }
     throw new Error(name);
   });

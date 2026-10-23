@@ -25,6 +25,8 @@ try {
     name,
     "--init",
     "--read-only",
+    "--memory",
+    "512m",
     "--cap-drop",
     "ALL",
     "--security-opt",

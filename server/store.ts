@@ -1,27 +1,14 @@
-import { createCipheriv, createDecipheriv, randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { chmod, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import knex, { type Knex } from "knex";
-import { z } from "zod";
+import { CredentialCipher } from "./credentials.js";
+import { HttpError } from "./errors.js";
+import { serversMigration } from "./migrations/001_servers.js";
 
-export const serverInput = z.object({
-  name: z.string().trim().min(1).max(120),
-  endpoint_url: z.url().refine((value) => {
-    const url = new URL(value);
-    return (
-      ["http:", "https:"].includes(url.protocol) &&
-      !url.username &&
-      !url.password &&
-      !url.search &&
-      !url.hash
-    );
-  }, "Use an HTTP(S) endpoint without credentials, query parameters, or fragments"),
-  region: z.string().trim().min(1).max(100).default("us-east-1"),
-  access_key: z.string().min(1).max(1024).optional(),
-  secret_key: z.string().min(1).max(4096).optional(),
-  force_path_style: z.boolean().default(true),
-});
-export type ServerInput = z.infer<typeof serverInput>;
+export { type ServerInput, serverInput } from "../shared/contracts.js";
+
+import type { ServerInput } from "../shared/contracts.js";
 export interface ServerRow {
   id: string;
   name: string;
@@ -37,7 +24,7 @@ export interface ServerRow {
 export class Store {
   private constructor(
     public db: Knex,
-    private key: Buffer,
+    private cipher: CredentialCipher,
   ) {}
 
   static async open(directory: string, databaseUri?: string) {
@@ -69,21 +56,7 @@ export class Store {
         migrationSource: {
           getMigrations: async () => ["001_servers"],
           getMigrationName: (name: string) => name,
-          getMigration: async () => ({
-            up: async (connection: Knex) =>
-              connection.schema.createTable("s3_servers", (table) => {
-                table.string("id").primary();
-                table.string("name").notNullable();
-                table.text("endpoint_url").notNullable();
-                table.string("region").notNullable();
-                table.text("access_key").notNullable();
-                table.text("secret_key").notNullable();
-                table.boolean("force_path_style").notNullable().defaultTo(true);
-                table.string("created_at").notNullable();
-                table.string("updated_at").notNullable();
-              }),
-            down: async (connection: Knex) => connection.schema.dropTable("s3_servers"),
-          }),
+          getMigration: async () => serversMigration,
         },
       });
       const keyPath = path.join(directory, "master.key");
@@ -110,10 +83,10 @@ export class Store {
       if (key.length !== 32) throw new Error("Invalid encryption key file");
       await chmod(keyPath, 0o600);
       if (!(await stat(keyPath)).isFile()) throw new Error("Invalid key file");
-      const store = new Store(db, key);
+      const store = new Store(db, new CredentialCipher(key));
       for (const row of await db<ServerRow>("s3_servers")) {
-        store.decrypt(row.access_key);
-        store.decrypt(row.secret_key);
+        store.cipher.decrypt(row.access_key);
+        store.cipher.decrypt(row.secret_key);
       }
       return store;
     } catch (error) {
@@ -122,34 +95,28 @@ export class Store {
     }
   }
 
-  private encrypt(value: string) {
-    const nonce = randomBytes(12);
-    const cipher = createCipheriv("aes-256-gcm", this.key, nonce);
-    cipher.setAAD(Buffer.from("stiva:credential:v1"));
-    const encrypted = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
-    return [
-      "v1",
-      nonce.toString("base64"),
-      cipher.getAuthTag().toString("base64"),
-      encrypted.toString("base64"),
-    ].join(":");
-  }
-  private decrypt(value: string) {
-    const [version, nonce, tag, ciphertext] = value.split(":");
-    if (version !== "v1" || !nonce || !tag || !ciphertext)
-      throw new Error("Invalid encrypted credential");
-    const cipher = createDecipheriv("aes-256-gcm", this.key, Buffer.from(nonce, "base64"));
-    cipher.setAAD(Buffer.from("stiva:credential:v1"));
-    cipher.setAuthTag(Buffer.from(tag, "base64"));
-    return Buffer.concat([
-      cipher.update(Buffer.from(ciphertext, "base64")),
-      cipher.final(),
-    ]).toString("utf8");
+  revision(row: ServerRow) {
+    return createHash("sha256")
+      .update(
+        JSON.stringify([
+          row.id,
+          row.name,
+          row.endpoint_url,
+          row.region,
+          row.access_key,
+          row.secret_key,
+          Boolean(row.force_path_style),
+          row.created_at,
+          row.updated_at,
+        ]),
+      )
+      .digest("hex");
   }
   publicRow(row: ServerRow) {
     const { access_key: _access, secret_key: _secret, ...rest } = row;
     return {
       ...rest,
+      revision: this.revision(row),
       force_path_style: Boolean(row.force_path_style),
       access_key: "••••••••",
       has_secret_key: true,
@@ -165,26 +132,47 @@ export class Store {
   }
   credentials(row: ServerRow) {
     return {
-      accessKeyId: this.decrypt(row.access_key),
-      secretAccessKey: this.decrypt(row.secret_key),
+      accessKeyId: this.cipher.decrypt(row.access_key),
+      secretAccessKey: this.cipher.decrypt(row.secret_key),
     };
   }
-  async save(input: ServerInput, existing?: ServerRow) {
-    const now = new Date().toISOString();
-    const row: ServerRow = {
-      ...input,
-      id: existing?.id ?? randomUUID(),
-      created_at: existing?.created_at ?? now,
-      updated_at: now,
-      access_key: input.access_key ? this.encrypt(input.access_key) : existing!.access_key,
-      secret_key: input.secret_key ? this.encrypt(input.secret_key) : existing!.secret_key,
-    };
-    if (existing) await this.db("s3_servers").where({ id: row.id }).update(row);
-    else await this.db("s3_servers").insert(row);
-    return this.publicRow(row);
+  async save(input: ServerInput, existing?: ServerRow, expectedRevision?: string) {
+    return this.db.transaction(async (trx) => {
+      let current: ServerRow | undefined;
+      if (existing) {
+        const query = trx<ServerRow>("s3_servers").where({ id: existing.id });
+        current = await (this.db.client.config.client === "pg" ? query.forUpdate() : query).first();
+        if (!current) throw new HttpError(404, "S3 server not found");
+        if (expectedRevision && expectedRevision !== `"${this.revision(current)}"`)
+          throw new HttpError(412, "Server changed. Reload its configuration before saving.");
+      }
+      if (!current && (!input.access_key || !input.secret_key))
+        throw new HttpError(400, "Access key and secret key are required");
+      const accessKey = input.access_key
+        ? this.cipher.encrypt(input.access_key)
+        : current?.access_key;
+      const secretKey = input.secret_key
+        ? this.cipher.encrypt(input.secret_key)
+        : current?.secret_key;
+      if (!accessKey || !secretKey)
+        throw new HttpError(400, "Access key and secret key are required");
+      const row: ServerRow = {
+        ...input,
+        id: current?.id ?? randomUUID(),
+        created_at: current?.created_at ?? new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        access_key: accessKey,
+        secret_key: secretKey,
+      };
+      if (current) {
+        const count = await trx("s3_servers").where({ id: row.id }).update(row);
+        if (!count) throw new HttpError(404, "S3 server not found");
+      } else await trx("s3_servers").insert(row);
+      return this.publicRow(row);
+    });
   }
   async close() {
     await this.db.destroy();
-    this.key.fill(0);
+    this.cipher.clear();
   }
 }

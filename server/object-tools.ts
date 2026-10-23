@@ -1,29 +1,23 @@
 import { randomUUID } from "node:crypto";
 import {
-  CopyObjectCommand,
   DeleteObjectCommand,
-  DeleteObjectsCommand,
-  HeadObjectCommand,
   ListObjectsV2Command,
   ListObjectVersionsCommand,
   type S3Client,
 } from "@aws-sdk/client-s3";
 import type { Express, Request } from "express";
 import { z } from "zod";
+import {
+  folderSchema as folder,
+  keySchema as key,
+  versionIdSchema as versionId,
+} from "../shared/contracts.js";
+import { deleteKeys } from "./deletion.js";
 import { HttpError } from "./errors.js";
+import { requestSignal } from "./resources.js";
 import { restoreVersion } from "./restore.js";
 
 type Using = <T>(req: Request, run: (client: S3Client) => Promise<T>) => Promise<T>;
-const key = z
-  .string()
-  .min(1)
-  .max(1024)
-  .refine((value) => Buffer.byteLength(value) <= 1024, "Key exceeds 1024 bytes");
-const folder = key.refine(
-  (value) => value.endsWith("/"),
-  "A nonempty folder prefix ending in / is required",
-);
-const versionId = z.string().min(1).max(2048);
 const versionAction = z
   .object({ key, versionId, confirmation: z.string() })
   .refine(
@@ -44,6 +38,10 @@ export function registerObjectTools(
   using: Using,
   selectedId: (req: Request) => string,
   clientScope: (client: S3Client) => string,
+  limits: {
+    preview: <T>(run: () => Promise<T>) => Promise<T>;
+    restore: <T>(run: () => Promise<T>) => Promise<T>;
+  },
 ) {
   const snapshots = new Map<string, Snapshot>();
   const clean = () => {
@@ -51,68 +49,73 @@ export function registerObjectTools(
   };
 
   app.get("/api/buckets/:bucket/folders/delete-preview", async (req, res) => {
-    const prefix = folder.parse(req.query.prefix);
-    const bucket = z.string().min(1).parse(req.params.bucket);
-    const { objects, scope } = await using(req, async (client) => {
-      const all: { key: string; size: number }[] = [];
-      let token: string | undefined;
-      const seen = new Set<string>();
-      const signal = AbortSignal.timeout(60000);
-      do {
-        const result = await client.send(
-          new ListObjectsV2Command({
-            Bucket: bucket,
-            Prefix: prefix,
-            ContinuationToken: token,
-            MaxKeys: 1000,
-          }),
-          { abortSignal: signal },
-        );
-        for (const object of result.Contents ?? []) {
-          if (object.Key && object.Key.startsWith(prefix))
-            all.push({ key: object.Key, size: object.Size ?? 0 });
-        }
-        if (all.length > 10000)
-          throw new HttpError(
-            413,
-            "Folder exceeds 10,000 objects. Delete smaller subfolders instead. No objects were deleted.",
+    await limits.preview(async () => {
+      clean();
+      if (snapshots.size >= 100)
+        throw new HttpError(429, "Too many deletion previews. Wait five minutes and retry.");
+      const prefix = folder.parse(req.query.prefix);
+      const bucket = z.string().min(1).parse(req.params.bucket);
+      const { objects, scope } = await using(req, async (client) => {
+        const all: { key: string; size: number }[] = [];
+        let token: string | undefined;
+        const seen = new Set<string>();
+        const signal = AbortSignal.timeout(60000);
+        do {
+          const result = await client.send(
+            new ListObjectsV2Command({
+              Bucket: bucket,
+              Prefix: prefix,
+              ContinuationToken: token,
+              MaxKeys: 1000,
+            }),
+            { abortSignal: signal },
           );
-        token = result.NextContinuationToken;
-        if (token && seen.has(token))
-          throw new HttpError(502, "Storage repeated a pagination token");
-        if (token) seen.add(token);
-        if (result.IsTruncated && !token)
-          throw new HttpError(502, "Storage omitted a required pagination token");
-      } while (token);
-      return {
-        objects: [...new Map(all.map((item) => [item.key, item])).values()],
-        scope: clientScope(client),
-      };
-    });
-    clean();
-    const retainedKeys = [...snapshots.values()].reduce(
-      (count, item) => count + item.keys.length,
-      0,
-    );
-    if (snapshots.size >= 100 || retainedKeys + objects.length > 20000)
-      throw new HttpError(429, "Too many active deletion previews. Wait five minutes and retry.");
-    const token = randomUUID();
-    const expires = Date.now() + 5 * 60 * 1000;
-    snapshots.set(token, {
-      serverId: selectedId(req),
-      scope,
-      bucket,
-      prefix,
-      keys: objects.map((item) => item.key),
-      expires,
-    });
-    res.json({
-      preview_token: token,
-      prefix,
-      count: objects.length,
-      size: objects.reduce((sum, item) => sum + item.size, 0),
-      sample: objects.slice(0, 20).map((item) => item.key),
-      expires_at: new Date(expires).toISOString(),
+          for (const object of result.Contents ?? []) {
+            if (object.Key?.startsWith(prefix))
+              all.push({ key: object.Key, size: object.Size ?? 0 });
+          }
+          if (all.length > 10000)
+            throw new HttpError(
+              413,
+              "Folder exceeds 10,000 objects. Delete smaller subfolders instead. No objects were deleted.",
+            );
+          token = result.NextContinuationToken;
+          if (token && seen.has(token))
+            throw new HttpError(502, "Storage repeated a pagination token");
+          if (token) seen.add(token);
+          if (result.IsTruncated && !token)
+            throw new HttpError(502, "Storage omitted a required pagination token");
+        } while (token);
+        return {
+          objects: [...new Map(all.map((item) => [item.key, item])).values()],
+          scope: clientScope(client),
+        };
+      });
+      clean();
+      const retainedKeys = [...snapshots.values()].reduce(
+        (count, item) => count + item.keys.length,
+        0,
+      );
+      if (snapshots.size >= 100 || retainedKeys + objects.length > 20000)
+        throw new HttpError(429, "Too many active deletion previews. Wait five minutes and retry.");
+      const token = randomUUID();
+      const expires = Date.now() + 5 * 60 * 1000;
+      snapshots.set(token, {
+        serverId: selectedId(req),
+        scope,
+        bucket,
+        prefix,
+        keys: objects.map((item) => item.key),
+        expires,
+      });
+      res.json({
+        preview_token: token,
+        prefix,
+        count: objects.length,
+        size: objects.reduce((sum, item) => sum + item.size, 0),
+        sample: objects.slice(0, 20).map((item) => item.key),
+        expires_at: new Date(expires).toISOString(),
+      });
     });
   });
 
@@ -148,36 +151,7 @@ export function registerObjectTools(
       if (snapshots.get(input.preview_token) !== snapshot)
         throw new HttpError(409, "Deletion preview was already submitted. Preview again.");
       snapshots.delete(input.preview_token);
-      const deleted: string[] = [];
-      const errors: { key: string; code: string }[] = [];
-      for (let offset = 0; offset < snapshot.keys.length; offset += 1000) {
-        const keys = snapshot.keys.slice(offset, offset + 1000);
-        try {
-          const output = await client.send(
-            new DeleteObjectsCommand({
-              Bucket: snapshot.bucket,
-              Delete: { Objects: keys.map((Key) => ({ Key })) },
-            }),
-          );
-          const successful = new Set(
-            (output.Deleted ?? []).flatMap((item) => (item.Key ? [item.Key] : [])),
-          );
-          const failed = new Map(
-            (output.Errors ?? []).map((item) => [item.Key, item.Code ?? "StorageError"]),
-          );
-          for (const key of keys) {
-            if (successful.has(key) && !failed.has(key)) deleted.push(key);
-            else
-              errors.push({
-                key,
-                code: failed.get(key) ?? "UnconfirmedDeletion",
-              });
-          }
-        } catch {
-          errors.push(...keys.map((key) => ({ key, code: "StorageError" })));
-        }
-      }
-      return { deleted, errors };
+      return deleteKeys(client, snapshot.bucket, snapshot.keys, undefined, true);
     });
     res.json(result);
   });
@@ -195,8 +169,6 @@ export function registerObjectTools(
         "A version marker requires a key marker",
       )
       .parse(req.query);
-    if (input.key && input.keyMarker && input.keyMarker !== input.key)
-      throw new HttpError(400, "Version pagination marker must match the object key");
     const result = await using(req, (client) =>
       client.send(
         new ListObjectVersionsCommand({
@@ -227,10 +199,24 @@ export function registerObjectTools(
         last_modified: item.LastModified,
       })),
     ].filter((item) => item.key && item.version_id && (!input.key || item.key === input.key));
-    const more =
-      result.IsTruncated &&
-      result.NextKeyMarker &&
-      (!input.key || result.NextKeyMarker === input.key);
+    versions.sort((a, b) => {
+      const byKey = (a.key ?? "").localeCompare(b.key ?? "");
+      return (
+        byKey ||
+        Number(b.is_latest) - Number(a.is_latest) ||
+        (b.last_modified?.getTime() ?? 0) - (a.last_modified?.getTime() ?? 0)
+      );
+    });
+    if (result.IsTruncated && !result.NextKeyMarker)
+      throw new HttpError(502, "Storage omitted a version pagination marker");
+    // Providers may append opaque state to key markers (including MinIO cache tokens).
+    // Exact-key scoping comes from Prefix and result filtering, never marker spelling.
+    const reachedNeighbors =
+      input.key &&
+      [...(result.Versions ?? []), ...(result.DeleteMarkers ?? [])].some(
+        (item) => item.Key && item.Key !== input.key,
+      );
+    const more = result.IsTruncated && result.NextKeyMarker && !reachedNeighbors;
     if (
       more &&
       result.NextKeyMarker === input.keyMarker &&
@@ -261,18 +247,16 @@ export function registerObjectTools(
   app.post("/api/buckets/:bucket/versions/restore", async (req, res) => {
     const input = versionAction.parse(req.body);
     const bucket = z.string().parse(req.params.bucket);
-    const controller = new AbortController();
-    const closed = () => {
-      if (!res.writableFinished) controller.abort();
-    };
-    res.once("close", closed);
-    try {
-      const result = await using(req, (client) =>
-        restoreVersion(client, bucket, input.key, input.versionId, controller.signal),
-      );
-      res.status(201).json({ key: input.key, version_id: result.VersionId ?? null });
-    } finally {
-      res.off("close", closed);
-    }
+    await limits.restore(async () => {
+      const operation = requestSignal(req);
+      try {
+        const result = await using(req, (client) =>
+          restoreVersion(client, bucket, input.key, input.versionId, operation.signal),
+        );
+        res.status(201).json({ key: input.key, version_id: result.VersionId ?? null });
+      } finally {
+        operation.dispose();
+      }
+    });
   });
 }

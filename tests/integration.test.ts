@@ -15,6 +15,7 @@ import request from "supertest";
 import { createApp } from "../server/app.js";
 import { makeS3 } from "../server/s3.js";
 import { Store } from "../server/store.js";
+import { required } from "./helpers.js";
 
 const endpoints = [process.env.STIVA_TEST_S3_A, process.env.STIVA_TEST_S3_B];
 const enabled =
@@ -33,14 +34,14 @@ test("live S3: two servers, folders, pagination, metadata, signed and streamed t
   await once(server, "listening");
   const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   const credentials = {
-    accessKeyId: process.env.STIVA_TEST_ACCESS_KEY!,
-    secretAccessKey: process.env.STIVA_TEST_SECRET_KEY!,
+    accessKeyId: required(process.env.STIVA_TEST_ACCESS_KEY),
+    secretAccessKey: required(process.env.STIVA_TEST_SECRET_KEY),
   };
   const buckets = [`stiva-a-${Date.now()}`, `stiva-b-${Date.now()}`];
   const clients = endpoints.map((endpoint) =>
     makeS3(
       {
-        endpoint_url: endpoint!,
+        endpoint_url: required(endpoint),
         region: "us-east-1",
         force_path_style: true,
       },
@@ -65,7 +66,7 @@ test("live S3: two servers, folders, pagination, metadata, signed and streamed t
                 Bucket: buckets[index],
                 Delete: {
                   Objects: result.Contents.map((item) => ({
-                    Key: item.Key!,
+                    Key: required(item.Key),
                   })),
                 },
               }),

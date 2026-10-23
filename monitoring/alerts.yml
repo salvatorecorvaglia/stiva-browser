@@ -1,0 +1,37 @@
+groups:
+  - name: stiva
+    rules:
+      - alert: StivaTargetDown
+        expr: up{job="stiva"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: Stiva metrics target is unavailable
+      - alert: StivaMultipartCleanupFailed
+        expr: increase(stiva_multipart_cleanup_failures_total[5m]) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: Inspect incomplete multipart uploads on storage
+      - alert: StivaMemoryHeadroomLow
+        expr: stiva_process_resident_memory_bytes > 450 * 1024 * 1024
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: Stiva is approaching its default container memory limit
+      - alert: StivaCapacityRejected
+        expr: sum by (job, instance, operation) (rate(stiva_storage_rejected_total[5m])) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: Storage admission limits are rejecting sustained traffic
+      - alert: StivaReadLatencyHigh
+        expr: histogram_quantile(0.95, sum by (job, instance, le) (rate(stiva_http_request_duration_seconds_bucket{method="GET",route=~"/api/buckets.*"}[5m]))) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Storage reads exceed the two second latency objective

@@ -13,7 +13,12 @@ export function makeS3(
     maxAttempts: 2,
     requestChecksumCalculation: "WHEN_REQUIRED",
     responseChecksumValidation: "WHEN_REQUIRED",
-    requestHandler: { connectionTimeout: 5000, requestTimeout: 120000 },
+    requestHandler: {
+      connectionTimeout: 5000,
+      requestTimeout: 120000,
+      throwOnRequestTimeout: true,
+      socketTimeout: 60000,
+    },
   };
   return new S3Client(options);
 }

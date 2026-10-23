@@ -33,21 +33,5 @@
     "parser": {
       "tailwindDirectives": true
     }
-  },
-  "overrides": [
-    {
-      "includes": ["web/src/**/*.tsx"],
-      "linter": {
-        "rules": {
-          "a11y": {
-            "useButtonType": "warn",
-            "noStaticElementInteractions": "warn"
-          },
-          "correctness": {
-            "useExhaustiveDependencies": "warn"
-          }
-        }
-      }
-    }
-  ]
+  }
 }

@@ -1,77 +1,6 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 
-async function reset(page: Page) {
-  const result = await page.request.get("/api/servers");
-  for (const server of await result.json()) await page.request.delete(`/api/servers/${server.id}`);
-}
-
-async function mockStorage(page: Page) {
-  await page.route("**/api/buckets", (route) =>
-    route.fulfill({
-      json: {
-        buckets: [
-          { name: "project-assets", created_at: "2026-10-01T12:00:00Z" },
-          { name: "backups" },
-        ],
-      },
-    }),
-  );
-  await page.route(/\/api\/buckets\/[^/]+\/objects\?/, (route) => {
-    const prefix = new URL(route.request().url()).searchParams.get("prefix");
-    return route.fulfill({
-      json: prefix
-        ? {
-            objects: [
-              {
-                key: `${prefix}notes.txt`,
-                size: 12,
-                last_modified: "2026-10-20T10:00:00Z",
-              },
-            ],
-            prefixes: [],
-            next_token: null,
-          }
-        : {
-            objects: [
-              {
-                key: "hello.txt",
-                size: 12,
-                last_modified: "2026-10-20T10:00:00Z",
-              },
-              {
-                key: "photo.png",
-                size: 2048,
-                last_modified: "2026-10-21T11:00:00Z",
-              },
-            ],
-            prefixes: ["documents/"],
-            next_token: null,
-          },
-    });
-  });
-  await page.route("**/api/buckets/*/objects/metadata?*", (route) =>
-    route.fulfill({
-      json: {
-        size: 12,
-        content_type: "text/plain",
-        metadata: { owner: "Stiva" },
-        storage_class: "STANDARD",
-      },
-    }),
-  );
-  await page.route("**/api/stream/download?*", (route) =>
-    route.fulfill({ contentType: "text/plain", body: "Hello Stiva!" }),
-  );
-  await page.route("**/api/presigned-url/download", (route) =>
-    route.fulfill({
-      json: {
-        url: "http://127.0.0.1:4173/example-signed-download",
-        expires_at: "2026-10-23T12:00:00Z",
-        required_headers: {},
-      },
-    }),
-  );
-}
+import { mockStorage, reset } from "./fixtures";
 
 test.beforeEach(async ({ page }) => {
   await reset(page);
@@ -122,7 +51,7 @@ test("empty workspace, server CRUD, bucket and folder navigation, search and saf
   await page.getByRole("button", { name: "Parent folder" }).click();
   await page.getByRole("button", { name: "hello.txt", exact: true }).click();
   await expect(page.getByText("Hello Stiva!", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Metadata", exact: true }).click();
+  await page.getByRole("tab", { name: "Metadata", exact: true }).click();
   await expect(page.getByText("text/plain", { exact: true })).toBeVisible();
   await page.getByRole("dialog").getByRole("button", { name: "Copy presigned URL" }).click();
   await expect(page.getByRole("dialog", { name: "Presigned download URL" })).toBeVisible();
@@ -184,11 +113,6 @@ test("new folder, deletion, and backend upload progress", async ({ page }) => {
       json: { error: { message: "S3 bucket or object not found." } },
     }),
   );
-  let uploaded = "";
-  await page.route("**/api/stream/upload?*", (route) => {
-    uploaded = route.request().postData() ?? "";
-    return route.fulfill({ status: 201, json: { key: "upload.txt" } });
-  });
   await page.getByLabel("Transfer through backend").check();
   await page.getByLabel("Upload files", { exact: true }).setInputFiles({
     name: "upload.txt",
@@ -196,7 +120,7 @@ test("new folder, deletion, and backend upload progress", async ({ page }) => {
     buffer: Buffer.from("uploaded content"),
   });
   await expect(page.getByText("Upload complete", { exact: true })).toBeVisible();
-  expect(uploaded).toBe("uploaded content");
+  expect(await (await page.request.get("/__test/upload")).text()).toBe("uploaded content");
 });
 
 test("server switching clears bucket context and uses the correct header", async ({ page }) => {
@@ -255,6 +179,11 @@ test("mobile navigation and accessible dialog keyboard dismissal", async ({ page
     .getByRole("button", { name: "project-assets" })
     .click();
   await expect(page.getByRole("heading", { name: "project-assets." })).toBeVisible();
+  expect(
+    await page
+      .locator(".stat small")
+      .evaluateAll((labels) => labels.every((label) => label.scrollWidth <= label.clientWidth)),
+  ).toBe(true);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
   );
@@ -345,7 +274,7 @@ test("recursive folder deletion requires a reviewed preview and exact confirmati
       },
     }),
   );
-  let deletion: any;
+  let deletion: { prefix: string; confirmation: string; preview_token: string } | undefined;
   await page.route("**/api/buckets/project-assets/folders", (route) => {
     deletion = route.request().postDataJSON();
     return route.fulfill({
@@ -496,4 +425,203 @@ test("version history restores data and permanently removes a marker with typed 
   await dialog.getByRole("button", { name: "Permanently delete version", exact: true }).click();
   await expect(dialog.getByText("Version permanently deleted.", { exact: true })).toBeVisible();
   await expect(dialog.getByText("Delete marker", { exact: true })).not.toBeVisible();
+});
+
+test("bucket refresh preserves an active upload and its location", async ({ page }) => {
+  await page.request.post("/api/servers", {
+    data: {
+      name: "Refresh fixture",
+      endpoint_url: "http://127.0.0.1:9000",
+      region: "us-east-1",
+      access_key: "fixture",
+      secret_key: "fixture-secret",
+      force_path_style: true,
+    },
+  });
+  await page.route("**/api/buckets/project-assets/objects/metadata?*", (route) =>
+    route.fulfill({ status: 404, json: { error: { message: "missing" } } }),
+  );
+  let release = () => {};
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/api/stream/upload?*", async (route) => {
+    await pending;
+    await route.fulfill({ status: 201, json: { key: "documents/refresh.txt" } });
+  });
+  await page.goto("/");
+  await page
+    .getByRole("navigation", { name: "Buckets" })
+    .getByRole("button", { name: "project-assets" })
+    .click();
+  await page.getByRole("button", { name: "documents", exact: true }).click();
+  await page.getByLabel("Transfer through backend").check();
+  await page.getByLabel("Upload files", { exact: true }).setInputFiles({
+    name: "refresh.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("refresh fixture"),
+  });
+  await expect(page.getByTitle("Cancel upload", { exact: true })).toBeVisible();
+  const refreshed = page.waitForResponse((response) => response.url().endsWith("/api/buckets"));
+  await page.getByTitle("Reload buckets", { exact: true }).click();
+  await refreshed;
+  await expect(page.getByRole("button", { name: "notes.txt", exact: true })).toBeVisible();
+  await expect(page.getByTitle("Cancel upload", { exact: true })).toBeVisible();
+  await expect(page.getByText("canceled", { exact: true })).not.toBeVisible();
+  release();
+  await expect(page.getByText("Upload complete", { exact: true })).toBeVisible();
+});
+
+test("closed mobile navigation leaves the tab order and restores toggle focus", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.request.post("/api/servers", {
+    data: {
+      name: "Keyboard fixture",
+      endpoint_url: "http://127.0.0.1:9000",
+      region: "us-east-1",
+      access_key: "fixture",
+      secret_key: "fixture-secret",
+      force_path_style: true,
+    },
+  });
+  await page.goto("/");
+  const toggle = page.getByRole("button", { name: "Toggle buckets" });
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await toggle.focus();
+  for (let i = 0; i < 12; i++) {
+    await page.keyboard.press("Tab");
+    expect(
+      await page.evaluate(() => Boolean(document.activeElement?.closest("#bucket-sidebar"))),
+    ).toBe(false);
+  }
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+  await page
+    .getByRole("navigation", { name: "Buckets" })
+    .getByRole("button", { name: "project-assets" })
+    .click();
+  await expect(toggle).toBeFocused();
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+});
+
+test("metadata loads without fetching a preview and meaningful text has sufficient contrast", async ({
+  page,
+}) => {
+  await page.request.post("/api/servers", {
+    data: {
+      name: "Metadata fixture",
+      endpoint_url: "http://127.0.0.1:9000",
+      region: "us-east-1",
+      access_key: "fixture",
+      secret_key: "fixture-secret",
+      force_path_style: true,
+    },
+  });
+  let previews = 0;
+  await page.route("**/api/stream/download?*", (route) => {
+    previews++;
+    return route.fulfill({ contentType: "text/plain", body: "preview contents" });
+  });
+  await page.goto("/");
+  await page
+    .getByRole("navigation", { name: "Buckets" })
+    .getByRole("button", { name: "project-assets" })
+    .click();
+  const ratio = await page
+    .locator(".date-cell")
+    .first()
+    .evaluate((element) => {
+      const color =
+        getComputedStyle(element)
+          .color.match(/[\d.]+/g)
+          ?.slice(0, 3)
+          .map(Number) ?? [];
+      const luminance = color
+        .map((v) => v / 255)
+        .map((v) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4))
+        .reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i], 0);
+      return 1.05 / (luminance + 0.05);
+    });
+  expect(ratio).toBeGreaterThanOrEqual(4.5);
+  const buttonContrast = await page
+    .locator(".button.primary")
+    .first()
+    .evaluate((element) => {
+      const style = getComputedStyle(element);
+      const luminance = (color: string) =>
+        (
+          color
+            .match(/[\d.]+/g)
+            ?.slice(0, 3)
+            .map(Number) ?? []
+        )
+          .map((v) => v / 255)
+          .map((v) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4))
+          .reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i], 0);
+      const foreground = luminance(style.color);
+      const background = luminance(style.backgroundColor);
+      return (Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05);
+    });
+  expect(buttonContrast).toBeGreaterThanOrEqual(4.5);
+
+  await page.getByTitle("Object metadata", { exact: true }).first().click();
+  await expect(page.getByText("text/plain", { exact: true })).toBeVisible();
+  expect(previews).toBe(0);
+  await page.getByRole("tab", { name: "Preview", exact: true }).click();
+  await expect(page.getByText("preview contents", { exact: true })).toBeVisible();
+  expect(previews).toBe(1);
+});
+
+test("copied S3 URIs omit the server name and stale signed links do not reopen dialogs", async ({
+  page,
+  context,
+  browserName,
+}) => {
+  if (browserName === "chromium")
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.request.post("/api/servers", {
+    data: {
+      name: "URI fixture",
+      endpoint_url: "http://127.0.0.1:9000",
+      region: "us-east-1",
+      access_key: "fixture",
+      secret_key: "fixture-secret",
+      force_path_style: true,
+    },
+  });
+  await page.goto("/");
+  await page
+    .getByRole("navigation", { name: "Buckets" })
+    .getByRole("button", { name: "project-assets" })
+    .click();
+  await page.getByTitle("Copy S3 path", { exact: true }).click();
+  if (browserName === "chromium")
+    await expect
+      .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+      .toBe("s3://project-assets/");
+  let release = () => {};
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/api/presigned-url/download", async (route) => {
+    await pending;
+    await route.fulfill({
+      json: {
+        url: "http://127.0.0.1:4173/old-link",
+        expires_at: new Date().toISOString(),
+        required_headers: {},
+      },
+    });
+  });
+  const requested = page.waitForRequest("**/api/presigned-url/download");
+  await page.getByTitle("Copy presigned URL", { exact: true }).first().click();
+  await requested;
+  await page.getByRole("button", { name: "documents", exact: true }).click();
+  const responded = page.waitForResponse("**/api/presigned-url/download");
+  release();
+  await responded;
+  await expect(page.getByRole("button", { name: "notes.txt", exact: true })).toBeVisible();
+  await expect(page.getByRole("dialog")).not.toBeVisible();
 });

@@ -1,0 +1,74 @@
+rule_files:
+  - alerts.yml
+evaluation_interval: 1m
+tests:
+  - name: healthy target
+    interval: 1m
+    input_series:
+      - series: up{job="stiva",instance="app:3000"}
+        values: 1x6
+      - series: stiva_multipart_cleanup_failures_total{job="stiva",instance="app:3000"}
+        values: 0x6
+      - series: stiva_process_resident_memory_bytes{job="stiva",instance="app:3000"}
+        values: 104857600x6
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: StivaTargetDown
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: StivaMultipartCleanupFailed
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: StivaMemoryHeadroomLow
+        exp_alerts: []
+  - name: missing target and insufficient memory headroom
+    interval: 1m
+    input_series:
+      - series: up{job="stiva",instance="app:3000"}
+        values: 0x6
+      - series: stiva_process_resident_memory_bytes{job="stiva",instance="app:3000"}
+        values: 500000000x6
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: StivaTargetDown
+        exp_alerts:
+          - exp_labels: { job: stiva, instance: "app:3000", severity: critical }
+            exp_annotations: { summary: Stiva metrics target is unavailable }
+      - eval_time: 3m
+        alertname: StivaMemoryHeadroomLow
+        exp_alerts:
+          - exp_labels: { job: stiva, instance: "app:3000", severity: warning }
+            exp_annotations: { summary: Stiva is approaching its default container memory limit }
+  - name: cleanup failure and admission saturation
+    interval: 1m
+    input_series:
+      - series: stiva_multipart_cleanup_failures_total{job="stiva",instance="app:3000"}
+        values: 0 0 1 1 1 1
+      - series: stiva_storage_rejected_total{job="stiva",instance="app:3000",operation="upload"}
+        values: 0+60x8
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: StivaMultipartCleanupFailed
+        exp_alerts:
+          - exp_labels: { job: stiva, instance: "app:3000", severity: critical }
+            exp_annotations: { summary: Inspect incomplete multipart uploads on storage }
+      - eval_time: 5m
+        alertname: StivaCapacityRejected
+        exp_alerts:
+          - exp_labels: { job: stiva, instance: "app:3000", operation: upload, severity: warning }
+            exp_annotations: { summary: Storage admission limits are rejecting sustained traffic }
+  - name: slow reads
+    interval: 1m
+    input_series:
+      - series: stiva_http_request_duration_seconds_bucket{job="stiva",instance="app:3000",method="GET",route="/api/buckets",le="1"}
+        values: 0+1x12
+      - series: stiva_http_request_duration_seconds_bucket{job="stiva",instance="app:3000",method="GET",route="/api/buckets",le="5"}
+        values: 0+100x12
+      - series: stiva_http_request_duration_seconds_bucket{job="stiva",instance="app:3000",method="GET",route="/api/buckets",le="+Inf"}
+        values: 0+100x12
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: StivaReadLatencyHigh
+        exp_alerts:
+          - exp_labels: { job: stiva, instance: "app:3000", severity: warning }
+            exp_annotations: { summary: Storage reads exceed the two second latency objective }

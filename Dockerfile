@@ -8,7 +8,10 @@ RUN pnpm install --frozen-lockfile
 FROM dependencies AS build
 COPY tsconfig*.json vite.config.ts ./
 COPY server ./server
+COPY shared ./shared
 COPY web ./web
+COPY tests ./tests
+COPY playwright.config.ts ./
 RUN pnpm typecheck && pnpm build
 RUN pnpm prune --prod
 

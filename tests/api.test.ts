@@ -8,6 +8,7 @@ import { S3Client } from "@aws-sdk/client-s3";
 import request from "supertest";
 import { type ClientFactory, createApp } from "../server/app.js";
 import { Store } from "../server/store.js";
+import { mockSend, required } from "./helpers.js";
 
 const config = {
   name: "Primary storage",
@@ -24,12 +25,12 @@ const factory: ClientFactory = (input, credentials) => {
     forcePathStyle: true,
     credentials,
   });
-  client.send = (async (command: { constructor: { name: string }; input: Record<string, any> }) => {
+  mockSend(client, (command) => {
     if (credentials.secretAccessKey === "wrong")
       throw Object.assign(new Error("credential material must not leak"), {
         $metadata: { httpStatusCode: 403 },
       });
-    switch (command.constructor.name) {
+    switch (command.name) {
       case "ListBucketsCommand":
         return {
           Buckets: [
@@ -60,19 +61,19 @@ const factory: ClientFactory = (input, credentials) => {
         return {};
       case "DeleteObjectsCommand":
         return {
-          Deleted: command.input.Delete.Objects.filter((item: any) => item.Key !== "denied").map(
-            (item: any) => ({ Key: item.Key }),
-          ),
-          Errors: command.input.Delete.Objects.some((item: any) => item.Key === "denied")
+          Deleted: required(command.input.Delete?.Objects)
+            .filter((item) => item.Key !== "denied")
+            .map((item) => ({ Key: item.Key })),
+          Errors: required(command.input.Delete?.Objects).some((item) => item.Key === "denied")
             ? [{ Key: "denied", Code: "AccessDenied" }]
             : [],
         };
       case "PutObjectCommand":
         return { ETag: "test" };
       default:
-        throw new Error(`Unexpected ${command.constructor.name}`);
+        throw new Error(`Unexpected ${command.name}`);
     }
-  }) as unknown as S3Client["send"];
+  });
   return client;
 };
 
@@ -131,13 +132,13 @@ test("credentials are encrypted, redacted, retained on update, and survive resta
   assert.ok(!JSON.stringify(row).includes(config.secret_key));
   assert.ok(!JSON.stringify(row).includes(config.access_key));
   assert.equal((await stat(path.join(directory, "master.key"))).mode & 0o777, 0o600);
-  assert.equal(store.credentials(row!).secretAccessKey, config.secret_key);
+  assert.equal(store.credentials(required(row)).secretAccessKey, config.secret_key);
   const { secret_key: _secret, access_key: _access, ...other } = config;
   await request(app)
     .put(`/api/servers/${id}`)
     .send({ ...other, name: "Renamed" })
     .expect(200);
-  assert.equal(store.credentials((await store.row(id))!).accessKeyId, config.access_key);
+  assert.equal(store.credentials(required(await store.row(id))).accessKeyId, config.access_key);
   await store.close();
   store = await Store.open(directory);
   app = createApp(store, { clientFactory: factory });
@@ -148,7 +149,7 @@ test("credentials are encrypted, redacted, retained on update, and survive resta
     .put(`/api/servers/${id}`)
     .send({ ...other, secret_key: "replacement" })
     .expect(200);
-  assert.equal(store.credentials((await store.row(id))!).secretAccessKey, "replacement");
+  assert.equal(store.credentials(required(await store.row(id))).secretAccessKey, "replacement");
   await request(app).delete(`/api/servers/${id}`).expect(204);
   assert.deepEqual((await request(app).get("/api/servers")).body, []);
 });
@@ -310,6 +311,7 @@ test("backend download streams, safe previews work, and active-content previews 
     .query({ serverId: id, bucket: "documents", key: "hello.txt" })
     .expect(200);
   assert.equal(result.body.toString(), "hello");
+  assert.equal(result.headers["cache-control"], "no-store");
   assert.ok(result.headers["content-disposition"].startsWith("attachment"));
   const preview = await request(app)
     .get("/api/stream/download")

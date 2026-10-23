@@ -25,23 +25,36 @@ pnpm start
 
 Production serves both the dashboard and API at http://localhost:3000. Runtime settings are `PORT` (default `3000`), `DATA_DIR` (default `./data`), and optional `DB_URI` for PostgreSQL. Without `DB_URI`, SQLite is used. The encryption key always remains in the data directory, including with PostgreSQL.
 
-## PostgreSQL and migration
+## Resource limits and proxy configuration
 
-Set `DB_URI` to a `postgresql://` or `postgres://` connection URI before starting the server. Use a dedicated database and a database account that can run the initial schema migrations. PostgreSQL connection and TLS options follow the `pg` driver's URI configuration. S3 credentials remain encrypted in the database and are still entered through the UI; `DB_URI` contains database connection settings only.
+The shared workspace still requires an authentication proxy protecting both the dashboard and `/api`.
+Configure `TRUST_PROXY` with the proxy's exact IP addresses or CIDRs (comma-separated) so throttling
+uses the visitor's IP. It defaults to disabled; `true` is rejected. Ensure the proxy overwrites
+forwarded headers and preserves the public Host header. Health probes are excluded from throttling.
 
-Keep `/data` persisted when using PostgreSQL: losing `master.key` still prevents decryption. Continue using one application replica unless all instances are provisioned with the same key and appropriate shared storage. Deletion previews are process-local and expire on restart.
+| Setting                   | Default | Behavior                                  |
+| ------------------------- | ------- | ----------------------------------------- |
+| `API_RATE_LIMIT`          | `600`   | API requests per client IP per minute     |
+| `MAX_CONCURRENT_UPLOADS`  | `4`     | Active backend uploads per process        |
+| `MAX_CONCURRENT_RESTORES` | `2`     | Active version restores per process       |
+| `MAX_CONCURRENT_PREVIEWS` | `2`     | Active recursive folder scans per process |
 
-To move an existing SQLite installation to an **empty** PostgreSQL database:
-1. Stop the application and back up the existing data directory.
-2. Set `DATA_DIR` to that directory and `DB_URI` to the destination database.
-3. Run `pnpm build`, then `node dist/server/migrate.js` (inside Docker, use the same image, environment, and data mount, overriding the command).
-4. Start the application with `DB_URI` and the same `DATA_DIR`.
+Limits must be positive integers. Excess work returns 429 with `Retry-After`; it is not queued.
+Static assets retain a separate 300-request-per-minute budget. Keep one replica: limits and deletion
+snapshots are process-local. Tune limits against available memory and monitor 429 responses before
+raising them. Backend uploads use two concurrent parts, with 8–16 MiB parts selected from
+Content-Length: known-length uploads support up to 156.25 GiB; unknown-length uploads up to
+78.125 GiB. Larger files are rejected with an explicit limit error. An inactive connection closes
+after 60 seconds; individual upstream requests enforce a 120-second deadline. Multipart failure or
+cancellation settles active parts and attempts cleanup with an independent 15-second deadline.
+Cleanup failures explicitly ask operators to inspect incomplete uploads. Shutdown stops accepting requests, closes remaining HTTP connections after 15 seconds, and waits for storage cleanup before closing the database. Kubernetes allows 45 seconds for this drain.
 
-The migration copies encrypted records in a transaction, retains their IDs and timestamps, and does not delete SQLite or replace the key. It refuses a nonempty destination. Selecting PostgreSQL without running this migration opens a separate database; configurations are not transferred automatically. For PostgreSQL backups, retain a database backup such as `pg_dump` **and** the matching master key.
+`GET /api/metrics` exports Prometheus request histograms, admission outcomes, cleanup failures,
+process memory and uptime. Protect it with the same authentication boundary as the API or scrape
+through a restricted internal network. See [monitoring](monitoring/README.md) for alert rules.
 
-## Access model
-
-This deployment is a shared workspace, as selected during planning. There are no application accounts, isolated tenants, or per-user S3 permissions. Every visitor can manage all registered servers and use their credentials through the API. Put both the UI **and `/api`** behind your existing authentication proxy or authenticated ingress before exposing the application. Use HTTPS and restrict outbound access to the S3 endpoints your operators need; endpoint management intentionally supports private network addresses.
+Production logs contain route templates, status codes, operation durations, and admission activity;
+they omit keys, endpoint URLs, credentials, request bodies, and presigned URLs.
 
 ## Files and transfers
 
@@ -101,24 +114,24 @@ The manifests use a 2 GiB ReadWriteOnce PVC, a single replica, `Recreate` upgrad
 
 ## REST API
 
-JSON errors have `{ "error": { "code": "…", "message": "…" } }`. Server responses omit secrets and mask access keys. Supply actual credentials only on creation/replacement; omit either field during updates to retain it.
+JSON errors have `{ "error": { "code": "…", "message": "…" } }`. Server responses omit secrets and mask access keys. They include an opaque `revision`. To reject stale edits, send `If-Match: "<revision>"` on server updates; a changed configuration returns 412 and a deleted configuration returns 404. The UI uses conditional updates. Clients omitting the header retain compatibility, and omitted credentials are retained from the current row transactionally. Supply actual credentials only on creation/replacement; omit either field during updates to retain it.
 
-| Method | Route                                   | Input / behavior                                                                                      |
-| ------ | --------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| GET    | `/api/servers`                          | Sanitized registered configurations                                                                   |
-| POST   | `/api/servers`                          | `name`, `endpoint_url`, `region`, `access_key`, `secret_key`, `force_path_style`                      |
-| PUT    | `/api/servers/:id`                      | Same configuration; omitted credential fields are retained                                            |
-| DELETE | `/api/servers/:id`                      | Removes configuration only                                                                            |
-| POST   | `/api/servers/test`                     | Draft configuration; optional `id` reuses stored credentials; never saves                             |
-| GET    | `/api/buckets`                          | Lists buckets                                                                                         |
-| GET    | `/api/buckets/:bucket/objects`          | `prefix`, `delimiter=/`, optional `continuationToken`; returns `objects`, `prefixes`, `next_token`    |
-| GET    | `/api/buckets/:bucket/objects/metadata` | Query `key`                                                                                           |
-| POST   | `/api/buckets/:bucket/folders`          | `{ "key": "folder/" }`                                                                                |
-| DELETE | `/api/buckets/:bucket/objects`          | `{ "keys": ["key"] }`; up to 10,000 keys, chunks of 1,000; returns deleted keys and individual errors |
-| POST   | `/api/presigned-url/download`           | `bucket`, `key`, optional `expiresIn` (60–3600 seconds; default 900)                                  |
-| POST   | `/api/presigned-url/upload`             | Same, plus optional `contentType`; returns `url`, `expires_at`, `required_headers`                    |
-| GET    | `/api/stream/download`                  | Query `bucket`, `key`; optional `preview=true` for bounded safe previews                              |
-| PUT    | `/api/stream/upload`                    | Query `bucket`, `key`; raw file body and its Content-Type                                             |
+| Method | Route                                   | Input / behavior                                                                                                                   |
+| ------ | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/servers`                          | Sanitized registered configurations                                                                                                |
+| POST   | `/api/servers`                          | `name`, `endpoint_url`, `region`, `access_key`, `secret_key`, `force_path_style`                                                   |
+| PUT    | `/api/servers/:id`                      | Same configuration; omitted credential fields are retained                                                                         |
+| DELETE | `/api/servers/:id`                      | Removes configuration only                                                                                                         |
+| POST   | `/api/servers/test`                     | Draft configuration; optional `id` reuses stored credentials; never saves                                                          |
+| GET    | `/api/buckets`                          | Lists buckets                                                                                                                      |
+| GET    | `/api/buckets/:bucket/objects`          | `prefix`, `delimiter=/`, optional `continuationToken`; returns `objects`, `prefixes`, `next_token`                                 |
+| GET    | `/api/buckets/:bucket/objects/metadata` | Query `key`                                                                                                                        |
+| POST   | `/api/buckets/:bucket/folders`          | `{ "key": "folder/" }`                                                                                                             |
+| DELETE | `/api/buckets/:bucket/objects`          | `{ "keys": ["key"] }`; up to 10,000 keys within a 64 KiB JSON body, S3 chunks of 1,000; returns deleted keys and individual errors |
+| POST   | `/api/presigned-url/download`           | `bucket`, `key`, optional `expiresIn` (60–3600 seconds; default 900)                                                               |
+| POST   | `/api/presigned-url/upload`             | Same, plus optional `contentType`; returns `url`, `expires_at`, `required_headers`                                                 |
+| GET    | `/api/stream/download`                  | Query `bucket`, `key`; optional `preview=true` for bounded safe previews                                                           |
+| PUT    | `/api/stream/upload`                    | Query `bucket`, `key`; raw file body and its Content-Type                                                                          |
 
 Additional object-management routes:
 
@@ -136,7 +149,30 @@ All bucket/object/transfer routes require `x-s3-server-id: <id>` or `?serverId=<
 
 Biome handles linting and formatting. Run `pnpm check` to check both, `pnpm lint` for linting only, `pnpm format:check` to verify formatting, or `pnpm format` to format files. `pnpm check:fix` applies safe lint, import, and formatting fixes.
 
-Existing React hook dependencies, button types, and static-element interaction findings are temporarily reported as warnings in `biome.json`; the remaining recommended rules keep their default severity.
+`pnpm check` rejects lint warnings as well as errors. Intentional refresh dependencies and focusable
+tab panels have narrowly documented suppressions. Run `pnpm test:coverage` for backend coverage
+gates (85% lines and 65% branches), `pnpm test:browser` for Chromium, Firefox, WebKit, keyboard,
+and axe accessibility regressions,
+and `pnpm test:s3` for both live integration suites against disposable localhost-only S3 fixtures.
+The S3 runner builds pinned MinIO community source because its historical binary registries are
+unavailable; the first build needs network access and Docker. Set `STIVA_TEST_S3_IMAGE` to use an
+existing compatible fixture image instead. Fixtures are removed after the run.
+
+Before promotion, use disposable buckets, run PostgreSQL/S3/browser/container checks, and back up
+the database with its matching master key. Retain the previous application image for rollback.
+Monitor storage failures, cleanup failures, active work, latency, 429 responses, and container memory.
+The database schema and credential encryption format remain compatible with existing installations.
+
+Run `pnpm test:staging` after building the application and S3 fixture images. It provisions an isolated
+local Docker environment with HTTPS, an authentication proxy, Prometheus, disposable S3 storage,
+SQLite and PostgreSQL. It verifies four concurrent uploads under a 512 MiB memory limit, excess-work
+rejection, read latency, SHA-256 integrity, cleanup alerting, redacted logs, image rollback, and backup
+restoration. Measurements are written to `test-results/staging-report.json`; all owned containers,
+volumes, networks, and temporary baseline image tags are removed afterward. It never uses a live
+cluster or existing data volume. By default it builds the baseline from HEAD for a dirty working tree,
+or HEAD^ for a clean checkout; set `STIVA_BASELINE_REF` or `STIVA_BASELINE_IMAGE` to test a specific
+previous release. A baseline image must differ from the candidate. See [monitoring](monitoring/README.md)
+and the [incremental implementation and validation record](docs/remediation.md).
 
 ---
 

@@ -25,7 +25,9 @@ export async function restoreVersion(
   if (metadata.DeleteMarker)
     throw new HttpError(409, "Delete markers cannot be restored as file contents");
   const source = `${encodeURIComponent(bucket)}/${key.split("/").map(encodeURIComponent).join("/")}?versionId=${encodeURIComponent(versionId)}`;
-  const size = metadata.ContentLength ?? 0;
+  const size = metadata.ContentLength;
+  if (size === undefined || !Number.isSafeInteger(size) || size < 0)
+    throw new HttpError(502, "Storage returned an invalid object size");
   if (size <= 5 * 1024 ** 3) {
     return client.send(
       new CopyObjectCommand({
@@ -49,6 +51,12 @@ export async function restoreVersion(
     }),
     { abortSignal: signal },
   );
+  const tagging = new URLSearchParams();
+  for (const tag of tags.TagSet ?? []) {
+    if (typeof tag.Key !== "string" || typeof tag.Value !== "string")
+      throw new HttpError(502, "Storage returned an invalid object tag");
+    tagging.append(tag.Key, tag.Value);
+  }
   const created = await client.send(
     new CreateMultipartUploadCommand({
       Bucket: bucket,
@@ -64,9 +72,7 @@ export async function restoreVersion(
       ServerSideEncryption: metadata.ServerSideEncryption,
       SSEKMSKeyId: metadata.SSEKMSKeyId,
       BucketKeyEnabled: metadata.BucketKeyEnabled,
-      Tagging: tags.TagSet?.length
-        ? new URLSearchParams(tags.TagSet.map((tag) => [tag.Key!, tag.Value!])).toString()
-        : undefined,
+      Tagging: tags.TagSet?.length ? tagging.toString() : undefined,
     }),
     { abortSignal: signal },
   );
@@ -127,6 +133,7 @@ export async function restoreVersion(
       throw new HttpError(
         502,
         "Restore failed and multipart cleanup could not be confirmed. Inspect incomplete multipart uploads on the S3 server.",
+        "MULTIPART_CLEANUP_FAILED",
       );
     }
     throw error;

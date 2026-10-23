@@ -1,10 +1,6 @@
-import { createHash } from "node:crypto";
 import path from "node:path";
-import { Readable, Transform } from "node:stream";
-import { pipeline } from "node:stream/promises";
 import {
-  DeleteObjectCommand,
-  DeleteObjectsCommand,
+  AbortMultipartUploadCommand,
   GetObjectCommand,
   HeadObjectCommand,
   ListBucketsCommand,
@@ -12,22 +8,21 @@ import {
   PutObjectCommand,
   type S3Client,
 } from "@aws-sdk/client-s3";
-import { Upload } from "@aws-sdk/lib-storage";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { rateLimit } from "express-rate-limit";
 import helmet from "helmet";
 import { ZodError, z } from "zod";
+import { keySchema, serverInput } from "../shared/contracts.js";
+import { deleteKeys } from "./deletion.js";
 import { HttpError } from "./errors.js";
 import { registerObjectTools } from "./object-tools.js";
+import { admission, originGuard, positiveInteger, requestSignal } from "./resources.js";
 import { makeS3 } from "./s3.js";
-import { type ServerInput, type Store, serverInput } from "./store.js";
+import type { Store } from "./store.js";
+import { Telemetry } from "./telemetry.js";
+import { disposition, registerDownload, registerUpload } from "./transfers.js";
 
-const keySchema = z
-  .string()
-  .min(1)
-  .max(1024)
-  .refine((key) => Buffer.byteLength(key) <= 1024, "Key exceeds 1024 bytes");
 const objectInput = z.object({ bucket: z.string().min(1), key: keySchema });
 const versionedObjectInput = objectInput.extend({
   versionId: z.string().min(1).max(2048).optional(),
@@ -41,42 +36,85 @@ export type ClientFactory = typeof makeS3;
 
 export function createApp(
   store: Store,
-  options: { clientFactory?: ClientFactory; staticDirectory?: string } = {},
+  options: {
+    clientFactory?: ClientFactory;
+    staticDirectory?: string;
+    apiLimit?: number;
+    trustProxy?: string | false;
+    uploadLimit?: number;
+    restoreLimit?: number;
+    previewLimit?: number;
+  } = {},
 ) {
   const app = express();
   const factory = options.clientFactory ?? makeS3;
   const clientScopes = new WeakMap<S3Client, string>();
+  const inFlight = new Set<Promise<unknown>>();
+  app.locals.waitForStorage = async () => {
+    while (inFlight.size) await Promise.allSettled([...inFlight]);
+  };
   app.disable("x-powered-by");
+  const telemetry = new Telemetry();
+  app.use(telemetry.httpMiddleware);
+  const trustProxy = options.trustProxy ?? process.env.TRUST_PROXY;
+  if (trustProxy && trustProxy !== "false") {
+    if (trustProxy === "true")
+      throw new Error("TRUST_PROXY must specify trusted proxy addresses or CIDRs, not true");
+    app.set(
+      "trust proxy",
+      trustProxy.split(",").map((value) => value.trim()),
+    );
+  }
+  const uploadAdmission = admission(
+    options.uploadLimit ?? positiveInteger(process.env.MAX_CONCURRENT_UPLOADS, 4),
+    "upload",
+    telemetry,
+  );
+  const restoreAdmission = admission(
+    options.restoreLimit ?? positiveInteger(process.env.MAX_CONCURRENT_RESTORES, 2),
+    "restore",
+    telemetry,
+  );
+  const previewAdmission = admission(
+    options.previewLimit ?? positiveInteger(process.env.MAX_CONCURRENT_PREVIEWS, 2),
+    "folder-preview",
+    telemetry,
+  );
   app.use(
     helmet({
       contentSecurityPolicy: {
         directives: {
           "connect-src": ["'self'", "http:", "https:"],
           "img-src": ["'self'", "blob:", "data:"],
+          // TLS redirects belong to the ingress; upgrading breaks supported local HTTP in Safari.
+          "upgrade-insecure-requests": null,
         },
       },
     }),
   );
-  app.use("/api", (req, res, next) => {
+  app.use("/api", (_req, res, next) => {
     res.setHeader("Cache-Control", "no-store");
-    if (!["GET", "HEAD", "OPTIONS"].includes(req.method)) {
-      const origin = req.get("origin");
-      if (
-        req.get("sec-fetch-site") === "cross-site" ||
-        (origin && new URL(origin).host !== req.get("host"))
-      )
-        return next(new HttpError(403, "Cross-origin changes are not permitted"));
-    }
     next();
   });
-  const json = express.json({ limit: "64kb" });
-  app.use((req, res, next) => (req.path === "/api/stream/upload" ? next() : json(req, res, next)));
-
+  app.use("/api", originGuard);
   app.get("/api/health/live", (_req, res) => res.json({ status: "ok" }));
   app.get("/api/health/ready", async (_req, res) => {
     await store.db.raw("SELECT 1");
     res.json({ status: "ok" });
   });
+
+  app.use(
+    "/api",
+    rateLimit({
+      windowMs: 60000,
+      limit: options.apiLimit ?? positiveInteger(process.env.API_RATE_LIMIT, 600),
+      standardHeaders: "draft-8",
+      legacyHeaders: false,
+      message: {
+        error: { code: "RATE_LIMITED", message: "Too many API requests. Retry shortly." },
+      },
+    }),
+  );
 
   async function selected(req: Request) {
     const header = req.get("x-s3-server-id");
@@ -91,16 +129,39 @@ export function createApp(
       { ...row, force_path_style: Boolean(row.force_path_style) },
       store.credentials(row),
     );
-    clientScopes.set(client, createHash("sha256").update(JSON.stringify(row)).digest("hex"));
+    clientScopes.set(client, store.revision(row));
     return client;
   }
-  async function using<T>(req: Request, run: (client: S3Client) => Promise<T>) {
-    const client = await selected(req);
-    try {
-      return await run(client);
-    } finally {
-      client.destroy();
-    }
+  function using<T>(req: Request, run: (client: S3Client) => Promise<T>): Promise<T> {
+    const task = (async () => {
+      const client = await selected(req);
+      const operation = requestSignal(req);
+      const send = client.send.bind(client);
+      // Apply disconnect cancellation to every command, retaining any stricter command deadline.
+      client.send = ((
+        command: Parameters<S3Client["send"]>[0],
+        settings?: { abortSignal?: AbortSignal },
+      ) =>
+        send(command, {
+          ...settings,
+          abortSignal:
+            command instanceof AbortMultipartUploadCommand
+              ? settings?.abortSignal
+              : settings?.abortSignal
+                ? AbortSignal.any([operation.signal, settings.abortSignal])
+                : operation.signal,
+        })) as S3Client["send"];
+      try {
+        return await run(client);
+      } finally {
+        operation.dispose();
+        client.destroy();
+      }
+    })();
+    inFlight.add(task);
+    return task.finally(() => {
+      inFlight.delete(task);
+    });
   }
   async function config(body: unknown, id?: string) {
     const input = serverInput.parse(body);
@@ -112,11 +173,21 @@ export function createApp(
       throw new HttpError(400, "Enter the actual access key or omit it to retain the stored key");
     return { input, existing };
   }
+  registerUpload(app, using, uploadAdmission);
+  app.use(express.json({ limit: "64kb" }));
+  app.get("/api/metrics", (_req, res) => {
+    res.type("text/plain; version=0.0.4; charset=utf-8").send(telemetry.render());
+  });
   registerObjectTools(
     app,
     using,
     (req) => req.get("x-s3-server-id") || parameter(req.query.serverId),
-    (client) => clientScopes.get(client)!,
+    (client) => {
+      const scope = clientScopes.get(client);
+      if (!scope) throw new HttpError(502, "Storage configuration scope is unavailable");
+      return scope;
+    },
+    { preview: previewAdmission, restore: restoreAdmission },
   );
   app.get("/api/servers", async (_req, res) => {
     res.json(await store.list());
@@ -127,16 +198,23 @@ export function createApp(
       req.body?.id === undefined ? undefined : parameter(req.body.id),
     );
     const saved = existing ? store.credentials(existing) : undefined;
-    const client = factory(input, {
-      accessKeyId: input.access_key ?? saved!.accessKeyId,
-      secretAccessKey: input.secret_key ?? saved!.secretAccessKey,
-    });
+    const accessKeyId = input.access_key ?? saved?.accessKeyId;
+    const secretAccessKey = input.secret_key ?? saved?.secretAccessKey;
+    if (!accessKeyId || !secretAccessKey)
+      throw new HttpError(400, "Access key and secret key are required");
+    const client = factory(input, { accessKeyId, secretAccessKey });
+    const operation = requestSignal(req, 15000);
     try {
-      const result = await client.send(new ListBucketsCommand({}), {
-        abortSignal: AbortSignal.timeout(15000),
+      const result = await client.send(new ListBucketsCommand({ MaxBuckets: 1000 }), {
+        abortSignal: operation.signal,
       });
-      res.json({ connected: true, bucket_count: result.Buckets?.length ?? 0 });
+      res.json({
+        connected: true,
+        bucket_count: result.Buckets?.length ?? 0,
+        has_more: Boolean(result.ContinuationToken),
+      });
     } finally {
+      operation.dispose();
       client.destroy();
     }
   });
@@ -146,7 +224,7 @@ export function createApp(
   });
   app.put("/api/servers/:id", async (req, res) => {
     const { input, existing } = await config(req.body, parameter(req.params.id));
-    res.json(await store.save(input, existing));
+    res.json(await store.save(input, existing, req.get("if-match")));
   });
   app.delete("/api/servers/:id", async (req, res) => {
     const deleted = await store.db("s3_servers").where({ id: req.params.id }).delete();
@@ -158,10 +236,18 @@ export function createApp(
     const buckets = await using(req, async (client) => {
       const all = [];
       let token: string | undefined;
+      const seen = new Set<string>();
+      const deadline = AbortSignal.timeout(60000);
       do {
-        const result = await client.send(new ListBucketsCommand({ ContinuationToken: token }));
+        const result = await client.send(
+          new ListBucketsCommand({ ContinuationToken: token, MaxBuckets: 1000 }),
+          { abortSignal: deadline },
+        );
         all.push(...(result.Buckets ?? []));
         token = result.ContinuationToken;
+        if (token && seen.has(token))
+          throw new HttpError(502, "Storage repeated a bucket pagination token");
+        if (token) seen.add(token);
       } while (token);
       return all.map((b) => ({ name: b.Name, created_at: b.CreationDate }));
     });
@@ -275,135 +361,17 @@ export function createApp(
   });
   app.delete("/api/buckets/:bucket/objects", async (req, res) => {
     const { keys } = z.object({ keys: z.array(keySchema).min(1).max(10000) }).parse(req.body);
-    const result = await using(req, async (client) => {
-      const bucket = parameter(req.params.bucket);
-      if (keys.length === 1) {
-        await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: keys[0] }));
-        return { deleted: keys, errors: [] };
-      }
-      const deleted: string[] = [];
-      const errors: { key: string | undefined; code: string | undefined }[] = [];
-      for (let start = 0; start < keys.length; start += 1000) {
-        const output = await client.send(
-          new DeleteObjectsCommand({
-            Bucket: bucket,
-            Delete: {
-              Objects: keys.slice(start, start + 1000).map((Key) => ({ Key })),
-            },
-          }),
-        );
-        deleted.push(...(output.Deleted ?? []).flatMap((item) => (item.Key ? [item.Key] : [])));
-        errors.push(
-          ...(output.Errors ?? []).map((item) => ({
-            key: item.Key,
-            code: item.Code,
-          })),
-        );
-      }
-      return { deleted, errors };
-    });
+    const result = await using(req, (client) =>
+      deleteKeys(client, parameter(req.params.bucket), keys),
+    );
     res.json(result);
   });
 
-  app.get("/api/stream/download", async (req, res) => {
-    const input = versionedObjectInput.parse(req.query);
-    const preview = req.query.preview === "true";
-    await using(req, async (client) => {
-      const controller = new AbortController();
-      const abort = () => {
-        if (!res.writableFinished) controller.abort();
-      };
-      res.on("close", abort);
-      try {
-        const output = await client.send(
-          new GetObjectCommand({
-            Bucket: input.bucket,
-            Key: input.key,
-            VersionId: input.versionId,
-            ...(preview ? { Range: "bytes=0-1048575" } : {}),
-          }),
-          { abortSignal: controller.signal },
-        );
-        if (!(output.Body instanceof Readable))
-          throw new HttpError(502, "Storage did not return an object stream");
-        const mime = (output.ContentType ?? "").split(";")[0].toLowerCase();
-        if (
-          preview &&
-          ![
-            "image/png",
-            "image/jpeg",
-            "image/gif",
-            "image/webp",
-            "image/avif",
-            "text/plain",
-            "text/csv",
-            "application/json",
-          ].includes(mime)
-        ) {
-          output.Body.destroy();
-          throw new HttpError(415, "Preview is unavailable for this file type");
-        }
-        if (preview && (output.ContentLength ?? 0) > 1048576) {
-          output.Body.destroy();
-          throw new HttpError(413, "Storage returned a preview larger than 1 MiB");
-        }
-        res.setHeader("Content-Type", preview ? mime : "application/octet-stream");
-        res.setHeader("Content-Disposition", preview ? "inline" : disposition(input.key));
-        if (output.ContentLength !== undefined)
-          res.setHeader("Content-Length", output.ContentLength);
-        if (preview) {
-          let length = 0;
-          const limit = new Transform({
-            transform(chunk, _encoding, callback) {
-              length += chunk.length;
-              callback(
-                length > 1048576 ? new HttpError(413, "Preview exceeds 1 MiB") : null,
-                length <= 1048576 ? chunk : undefined,
-              );
-            },
-          });
-          await pipeline(output.Body, limit, res);
-        } else await pipeline(output.Body, res);
-      } finally {
-        res.off("close", abort);
-      }
-    });
-  });
-  app.put("/api/stream/upload", async (req, res) => {
-    const input = objectInput.parse(req.query);
-    await using(req, async (client) => {
-      const upload = new Upload({
-        client,
-        params: {
-          Bucket: input.bucket,
-          Key: input.key,
-          Body: req,
-          ContentType: req.get("content-type") ?? "application/octet-stream",
-        },
-        queueSize: 2,
-        partSize: 8 * 1024 * 1024,
-        leavePartsOnError: false,
-      });
-      const abort = () => {
-        void upload.abort();
-      };
-      const closed = () => {
-        if (!res.writableFinished) abort();
-      };
-      req.once("aborted", abort);
-      res.once("close", closed);
-      try {
-        await upload.done();
-      } finally {
-        req.off("aborted", abort);
-        res.off("close", closed);
-      }
-    });
-    res.status(201).json({ key: input.key });
-  });
+  registerDownload(app, using);
 
   app.use("/api", (_req, _res, next) => next(new HttpError(404, "API route not found")));
-  if (options.staticDirectory) {
+  const staticDirectory = options.staticDirectory;
+  if (staticDirectory) {
     // Share one per-client budget across assets and the SPA fallback before filesystem access.
     app.use(
       rateLimit({
@@ -414,12 +382,15 @@ export function createApp(
         message: { error: { code: "RATE_LIMITED", message: "Too many requests, try again later" } },
       }),
     );
-    app.use(express.static(options.staticDirectory));
-    app.get("/{*path}", (_req, res) =>
-      res.sendFile(path.join(options.staticDirectory!, "index.html")),
-    );
+    app.use(express.static(staticDirectory));
+    app.get("/{*path}", (_req, res) => res.sendFile(path.join(staticDirectory, "index.html")));
   }
   app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
+    if (error instanceof HttpError && error.code === "MULTIPART_CLEANUP_FAILED") {
+      telemetry.cleanupFailed();
+      if (process.env.NODE_ENV === "production")
+        console.error(JSON.stringify({ event: "multipart_cleanup_failed", status: error.status }));
+    }
     if (res.headersSent) {
       res.destroy();
       return;
@@ -436,7 +407,8 @@ export function createApp(
       return;
     }
     if (error instanceof HttpError) {
-      res.status(error.status).json({ error: { code: "REQUEST_ERROR", message: error.message } });
+      if (error.status === 429) res.setHeader("Retry-After", "5");
+      res.status(error.status).json({ error: { code: error.code, message: error.message } });
       return;
     }
     const upstream = error as {
@@ -478,9 +450,4 @@ export function createApp(
     });
   });
   return app;
-}
-
-function disposition(key: string) {
-  const name = key.split("/").pop() || "download";
-  return `attachment; filename="${name.replace(/[^\x20-\x7e]|["\\]/g, "_")}"; filename*=UTF-8''${encodeURIComponent(name).replace(/['()*]/g, (c) => `%${c.charCodeAt(0).toString(16)}`)}`;
 }

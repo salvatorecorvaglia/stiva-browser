@@ -1,0 +1,180 @@
+@theme {
+  --font-sans: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+:root {
+  font-family: var(--font-sans);
+  color: #253447;
+  background: #f8fafb;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  font-size: 14px;
+  --color-text: #253447;
+  --color-primary: #087762;
+  --color-folder: #8a6100;
+  --color-image: #77519a;
+  --color-code: #365f83;
+  --color-archive: #805332;
+  --color-muted: #526170;
+  --color-success: #22734f;
+  --color-danger: #ad3535;
+  --color-border: #dfe8e2;
+  --radius-control: 6px;
+  --space-control: 12px;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+}
+button,
+input,
+select {
+  font: inherit;
+}
+button,
+a,
+input,
+select {
+  -webkit-tap-highlight-color: transparent;
+}
+button {
+  cursor: pointer;
+}
+button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+button,
+a {
+  transition: var(--motion-transition, background 0.15s, color 0.15s, box-shadow 0.15s);
+}
+button {
+  border: 0;
+  background: none;
+  color: inherit;
+}
+input,
+select {
+  outline: none;
+}
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid #0b9279;
+  outline-offset: 3px;
+}
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid #81c9bb;
+  outline-offset: 1px;
+}
+input[type="checkbox"] {
+  accent-color: #0b8d75;
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+}
+input::placeholder {
+  color: var(--color-muted);
+}
+.hidden {
+  display: none;
+}
+.muted {
+  color: var(--color-muted);
+}
+.spin {
+  animation: spin var(--motion-duration, 1s) linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid transparent;
+  padding: 9px 13px;
+  border-radius: var(--radius-control);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  min-height: 35px;
+}
+.button.primary {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: white;
+  box-shadow: 0 2px 3px #0d8c7612;
+}
+.button.primary:hover {
+  background: #065c4c;
+}
+.button.secondary {
+  background: white;
+  border-color: #e1e6ea;
+  color: #526170;
+  box-shadow: 0 1px 2px #26364404;
+}
+.button.secondary:hover {
+  background: #f6f9fa;
+}
+.button.danger {
+  background: #c84343;
+  color: white;
+}
+.button.danger.subtle {
+  background: #fff4f3;
+  color: #bd4545;
+  border-color: #fae0dd;
+}
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 29px;
+  height: 29px;
+  border-radius: 5px;
+  color: var(--color-muted);
+  flex-shrink: 0;
+}
+.icon-button:hover {
+  background: #edf2f4;
+  color: #365163;
+}
+.delete-action:hover {
+  background: #fff0ef;
+  color: var(--color-danger);
+}
+.error-text {
+  color: var(--color-danger);
+  font-size: 11px;
+}
+.text-button {
+  font-size: 10px;
+  color: var(--color-success);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+@media (max-width: 680px) {
+  .button {
+    font-size: 10px;
+    padding: 9px 10px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-duration: 0.01ms;
+    --motion-transition: none;
+  }
+}
+@media (max-width: 680px) {
+  .icon-button {
+    min-width: 29px;
+    min-height: 29px;
+  }
+}

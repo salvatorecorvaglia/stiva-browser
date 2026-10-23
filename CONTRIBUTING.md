@@ -24,7 +24,8 @@ URLs out of commits, logs, issue reports, and screenshots.
 ## Project layout
 
 - `web/`: React interface, styles, and API client.
-- `server/`: Express API, S3 operations, persistence, encryption, and migration.
+- `server/`: Express API, S3 services, resource admission, persistence, encryption, and versioned migrations.
+- `shared/`: API contracts and validation shared between frontend and backend.
 - `tests/`: API, persistence, integration, and browser tests.
 - `k8s/` and `Dockerfile`: deployment configuration.
 - `.github/workflows/`: CI and release automation.
@@ -33,8 +34,8 @@ URLs out of commits, logs, issue reports, and screenshots.
 
 Keep each pull request focused and follow the surrounding TypeScript patterns. Biome controls
 formatting, lint rules, and import organization; use `pnpm check:fix` for safe automatic fixes.
-Review the resulting diff and avoid unrelated formatting changes. Existing warning-level rules are
-documented in the README; avoid introducing new warnings.
+Review the resulting diff and avoid unrelated formatting changes. The check command rejects warnings;
+keep any necessary suppressions narrow and explain their behavior.
 
 Add or update tests for behavior changes, especially credential handling, persistence, S3 operations,
 and destructive actions. Update the README when configuration, API behavior, or user workflows change.
@@ -47,31 +48,44 @@ Run the core checks before submitting code changes:
 ```sh
 pnpm check
 pnpm typecheck
-pnpm test
+pnpm test:coverage
 pnpm build
 ```
 
-For interface changes, install Chromium and run the browser suite. Playwright builds and starts its
+For interface changes, install all three browser engines and run the browser suite. Playwright builds and starts its
 own production test server on port 4173:
 
 ```sh
-pnpm exec playwright install chromium
+pnpm exec playwright install chromium firefox webkit
 pnpm test:browser
 ```
 
 On Linux, Playwright may also require system dependencies via
-`pnpm exec playwright install --with-deps chromium`.
+`pnpm exec playwright install --with-deps chromium firefox webkit`.
+For a reproducible Linux environment on another host, run:
+
+```sh
+docker build -f tests/browser/Dockerfile -t stiva-browser:test-engines .
+docker run --rm --init --ipc=host stiva-browser:test-engines
+```
+
+This image contains test browsers and compiler tools and is separate from the production image.
 
 CI also runs the following Docker-backed checks. These require a running Docker daemon:
 
 ```sh
 node tests/run-postgres.mjs
+pnpm test:s3
 docker build --tag stiva-browser:1.0.0 .
 node tests/container-smoke.mjs
+pnpm test:staging
 ```
 
 The PostgreSQL runner provisions a temporary database and tests persistence and migration. The
-container smoke test checks security and persistence using the image built above.
+container smoke test checks security and persistence using the image built above. Staging measures
+concurrent transfers and read latency, exercises monitoring fault injection, and verifies promotion,
+rollback and backup restoration with production images. Keep two revisions available in shallow
+checkouts (`git fetch --depth=2`) or provide an explicit baseline image.
 
 Some tests are conditional: PostgreSQL tests require `STIVA_TEST_DB_URI` (set by the runner), and live
 versioned S3 tests require `STIVA_TEST_VERSIONED_S3`, with optional `STIVA_TEST_ACCESS_KEY` and

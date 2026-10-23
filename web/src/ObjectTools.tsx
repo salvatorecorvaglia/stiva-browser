@@ -7,7 +7,7 @@ import {
   RotateCcw,
   Trash2,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   api,
   bucketPath,
@@ -46,6 +46,7 @@ export function FolderDeleteModal({
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
   const [revision, setRevision] = useState(0);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: revision refreshes the deletion snapshot.
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
@@ -163,6 +164,7 @@ export function FolderDeleteModal({
             Refresh preview
           </button>
           <button
+            type="submit"
             className="button danger"
             disabled={working || loading || !preview?.count || confirmation !== prefix}
           >
@@ -205,55 +207,68 @@ export function VersionsModal({
   const [notice, setNotice] = useState("");
   const [revision, setRevision] = useState(0);
   const read = useRef<AbortController | null>(null);
-  async function load(marker?: { key: string; version?: string }) {
-    read.current?.abort();
-    const controller = new AbortController();
-    read.current = controller;
-    setLoading(true);
-    setError("");
-    if (!marker) {
-      setVersions([]);
-      setNext(null);
-    }
-    const query = new URLSearchParams(exactKey ? { key: exactKey } : { prefix });
-    if (marker) {
-      query.set("keyMarker", marker.key);
-      if (marker.version) query.set("versionIdMarker", marker.version);
-    }
-    try {
-      const result = await api<VersionListing>(
-        `${bucketPath(bucket)}/versions?${query}`,
-        { signal: controller.signal },
-        serverId,
-      );
-      setVersions((current) => [
-        ...new Map(
-          [...(marker ? current : []), ...result.versions].map((version) => [
-            JSON.stringify([version.key, version.version_id]),
-            version,
-          ]),
-        ).values(),
-      ]);
-      setNext(
-        result.next_key_marker
-          ? {
-              key: result.next_key_marker,
-              version: result.next_version_id_marker ?? undefined,
-            }
-          : null,
-      );
-    } catch (err) {
-      if (!controller.signal.aborted) setError((err as Error).message);
-    } finally {
-      if (!controller.signal.aborted) setLoading(false);
-    }
-  }
+  const load = useCallback(
+    async (marker?: { key: string; version?: string }) => {
+      read.current?.abort();
+      const controller = new AbortController();
+      read.current = controller;
+      setLoading(true);
+      setError("");
+      if (!marker) {
+        setVersions([]);
+        setNext(null);
+      }
+      const query = new URLSearchParams(exactKey ? { key: exactKey } : { prefix });
+      if (marker) {
+        query.set("keyMarker", marker.key);
+        if (marker.version) query.set("versionIdMarker", marker.version);
+      }
+      try {
+        const result = await api<VersionListing>(
+          `${bucketPath(bucket)}/versions?${query}`,
+          { signal: controller.signal },
+          serverId,
+        );
+        if (controller.signal.aborted) return;
+        setVersions((current) =>
+          [
+            ...new Map(
+              [...(marker ? current : []), ...result.versions].map((version) => [
+                JSON.stringify([version.key, version.version_id]),
+                version,
+              ]),
+            ).values(),
+          ].sort(
+            (a, b) =>
+              a.key.localeCompare(b.key) ||
+              Number(b.is_latest) - Number(a.is_latest) ||
+              (b.last_modified ? new Date(b.last_modified).getTime() : 0) -
+                (a.last_modified ? new Date(a.last_modified).getTime() : 0),
+          ),
+        );
+        setNext(
+          result.next_key_marker
+            ? {
+                key: result.next_key_marker,
+                version: result.next_version_id_marker ?? undefined,
+              }
+            : null,
+        );
+      } catch (err) {
+        if (!controller.signal.aborted) setError((err as Error).message);
+      } finally {
+        if (!controller.signal.aborted) setLoading(false);
+      }
+    },
+    [serverId, bucket, prefix, exactKey],
+  );
+  // biome-ignore lint/correctness/useExhaustiveDependencies: revision reloads history after writes.
   useEffect(() => {
     setAction(null);
     setConfirmation("");
     void load();
     return () => read.current?.abort();
-  }, [serverId, bucket, prefix, exactKey, revision]);
+  }, [load, revision]);
   async function applyAction() {
     if (!action || confirmation !== action.version.key) return;
     setWorking(true);
@@ -315,7 +330,7 @@ export function VersionsModal({
               onChange={(event) => setKeyInput(event.target.value)}
             />
           </label>
-          <button className="button secondary" disabled={working}>
+          <button type="submit" className="button secondary" disabled={working}>
             <History size={14} />
             View history
           </button>
@@ -379,6 +394,7 @@ export function VersionsModal({
                 Cancel
               </button>
               <button
+                type="submit"
                 className={`button ${action.type === "delete" ? "danger" : "primary"}`}
                 disabled={working || confirmation !== action.version.key}
               >
@@ -441,6 +457,7 @@ export function VersionsModal({
                             <ArrowDownToLine size={15} />
                           </a>
                           <button
+                            type="button"
                             className="icon-button"
                             title={`Restore version ${version.version_id}`}
                             disabled={working}
@@ -455,6 +472,7 @@ export function VersionsModal({
                         </>
                       )}
                       <button
+                        type="button"
                         className="icon-button delete-action"
                         title={`Permanently delete version ${version.version_id}`}
                         disabled={working}
@@ -485,6 +503,7 @@ export function VersionsModal({
         <div className="version-pagination">
           <span>{versions.length} versions loaded</span>
           <button
+            type="button"
             className="button secondary"
             disabled={working || loading}
             onClick={() => setRevision((value) => value + 1)}
@@ -494,6 +513,7 @@ export function VersionsModal({
           </button>
           {next && (
             <button
+              type="button"
               className="button secondary"
               disabled={working || loading}
               onClick={() => void load(next)}

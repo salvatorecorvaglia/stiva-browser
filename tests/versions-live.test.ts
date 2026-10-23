@@ -20,12 +20,13 @@ import request from "supertest";
 import { createApp } from "../server/app.js";
 import { makeS3 } from "../server/s3.js";
 import { Store } from "../server/store.js";
+import { required } from "./helpers.js";
 
 test("live versioned S3: history, restore, permanent deletes, markers, pagination, and recursive snapshots", {
   skip: !process.env.STIVA_TEST_VERSIONED_S3,
   timeout: 120000,
 }, async (t) => {
-  const endpoint = process.env.STIVA_TEST_VERSIONED_S3!;
+  const endpoint = required(process.env.STIVA_TEST_VERSIONED_S3);
   const credentials = {
     accessKeyId: process.env.STIVA_TEST_ACCESS_KEY ?? "fixture-access",
     secretAccessKey: process.env.STIVA_TEST_SECRET_KEY ?? "fixture-secret",
@@ -58,8 +59,8 @@ test("live versioned S3: history, restore, permanent deletes, markers, paginatio
           );
           all.push(
             ...[...(result.Versions ?? []), ...(result.DeleteMarkers ?? [])].map((item) => ({
-              Key: item.Key!,
-              VersionId: item.VersionId!,
+              Key: required(item.Key),
+              VersionId: required(item.VersionId),
             })),
           );
           keyMarker = result.IsTruncated ? result.NextKeyMarker : undefined;
@@ -137,9 +138,14 @@ test("live versioned S3: history, restore, permanent deletes, markers, paginatio
     .set("x-s3-server-id", id)
     .expect(200);
   assert.equal(history.body.versions.length, 3);
-  assert.ok(history.body.versions.some((v: any) => v.is_delete_marker && v.is_latest));
+  assert.ok(
+    history.body.versions.some(
+      (v: { key: string; is_delete_marker: boolean; is_latest: boolean }) =>
+        v.is_delete_marker && v.is_latest,
+    ),
+  );
   const stream = await fetch(
-    `${base}/api/stream/download?${new URLSearchParams({ bucket, key, serverId: id, versionId: old.VersionId! })}`,
+    `${base}/api/stream/download?${new URLSearchParams({ bucket, key, serverId: id, versionId: required(old.VersionId) })}`,
   );
   assert.equal(stream.status, 200);
   assert.equal(await stream.text(), "old contents");
@@ -273,6 +279,16 @@ test("live versioned S3: history, restore, permanent deletes, markers, paginatio
       .set("x-s3-server-id", id)
       .expect(200)
   ).body;
-  assert.ok(retained.versions.some((v: any) => v.key === "nested/a.txt" && !v.is_delete_marker));
-  assert.ok(retained.versions.some((v: any) => v.key === "nested/a.txt" && v.is_delete_marker));
+  assert.ok(
+    retained.versions.some(
+      (v: { key: string; is_delete_marker: boolean; is_latest: boolean }) =>
+        v.key === "nested/a.txt" && !v.is_delete_marker,
+    ),
+  );
+  assert.ok(
+    retained.versions.some(
+      (v: { key: string; is_delete_marker: boolean; is_latest: boolean }) =>
+        v.key === "nested/a.txt" && v.is_delete_marker,
+    ),
+  );
 });

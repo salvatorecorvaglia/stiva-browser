@@ -1,55 +1,26 @@
-export interface Server {
-  id: string;
-  name: string;
-  endpoint_url: string;
-  region: string;
-  access_key: string;
-  has_secret_key: boolean;
-  force_path_style: boolean;
-  created_at: string;
-  updated_at: string;
-}
-export interface Bucket {
-  name: string;
-  created_at?: string;
-}
-export interface S3Object {
-  key: string;
-  size: number;
-  last_modified?: string;
-  etag?: string;
-}
-export interface Listing {
-  objects: S3Object[];
-  prefixes: string[];
-  next_token: string | null;
-}
-export interface Metadata {
-  size: number;
-  content_type: string;
-  last_modified?: string;
-  etag?: string;
-  metadata: Record<string, string>;
-  storage_class: string;
-}
-export interface Signed {
-  url: string;
-  expires_at: string;
-  required_headers: Record<string, string>;
-}
-export interface ObjectVersion {
-  key: string;
-  version_id: string;
-  is_latest: boolean;
-  is_delete_marker: boolean;
-  size: number;
-  last_modified?: string;
-  etag?: string;
-}
-export interface VersionListing {
-  versions: ObjectVersion[];
-  next_key_marker: string | null;
-  next_version_id_marker: string | null;
+import type { DeletionResult } from "../../shared/contracts";
+
+export type {
+  Bucket,
+  DeletionResult,
+  Listing,
+  Metadata,
+  ObjectVersion,
+  S3Object,
+  Server,
+  Signed,
+  VersionListing,
+} from "../../shared/contracts";
+
+export class ApiError extends Error {
+  constructor(
+    public status: number,
+    public code: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
 }
 
 export async function api<T>(
@@ -63,7 +34,11 @@ export async function api<T>(
   const response = await fetch(url, { ...options, headers });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
-    throw new Error(body.error?.message ?? `Request failed (${response.status})`);
+    throw new ApiError(
+      response.status,
+      body.error?.code ?? "REQUEST_ERROR",
+      body.error?.message ?? `Request failed (${response.status})`,
+    );
   }
   return response.status === 204 ? (undefined as T) : response.json();
 }
@@ -135,4 +110,48 @@ export function uploadFile(
     }
     xhr.send(file);
   });
+}
+
+/** Split by wire bytes as well as count; escaped Unicode/control keys can grow in JSON. */
+export function deletionBatches(keys: string[]) {
+  const batches: string[][] = [];
+  let batch: string[] = [];
+  let size = new TextEncoder().encode('{"keys":[]}').length;
+  for (const key of new Set(keys)) {
+    const length = new TextEncoder().encode(JSON.stringify(key)).length + (batch.length ? 1 : 0);
+    if (batch.length && (batch.length >= 1000 || size + length > 60 * 1024)) {
+      batches.push(batch);
+      batch = [];
+      size = 11;
+    }
+    batch.push(key);
+    size += length;
+  }
+  if (batch.length) batches.push(batch);
+  return batches;
+}
+
+export async function deleteObjects(
+  serverId: string,
+  bucket: string,
+  keys: string[],
+): Promise<DeletionResult> {
+  const result: DeletionResult = { deleted: [], errors: [] };
+  for (const batch of deletionBatches(keys)) {
+    try {
+      const output = await api<DeletionResult>(
+        `${bucketPath(bucket)}/objects`,
+        {
+          method: "DELETE",
+          body: JSON.stringify({ keys: batch }),
+        },
+        serverId,
+      );
+      result.deleted.push(...output.deleted);
+      result.errors.push(...output.errors);
+    } catch {
+      result.errors.push(...batch.map((key) => ({ key, code: "UnconfirmedDeletion" })));
+    }
+  }
+  return result;
 }
