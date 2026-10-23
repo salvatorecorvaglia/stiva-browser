@@ -5,6 +5,8 @@ import { setTimeout as delay } from "node:timers/promises";
 
 const name = `stiva-smoke-${randomUUID().slice(0, 12)}`;
 const volume = `${name}-data`;
+const image = process.env.CONTAINER_IMAGE || "stiva-browser:1.0.0";
+const platform = process.env.CONTAINER_PLATFORM;
 const docker = (...args) =>
   execFileSync("docker", args, {
     encoding: "utf8",
@@ -17,6 +19,7 @@ try {
   volumeCreated = true;
   docker(
     "run",
+    ...(platform ? ["--platform", platform] : []),
     "-d",
     "--name",
     name,
@@ -30,12 +33,12 @@ try {
     "127.0.0.1::3000",
     "-v",
     `${volume}:/data`,
-    "stiva-browser:1.0.0",
+    image,
   );
   created = true;
   let base = `http://${docker("port", name, "3000/tcp").split("\n")[0]}`;
   async function ready() {
-    for (let i = 0; i < 60; i++) {
+    for (let i = 0; i < 240; i++) {
       try {
         if ((await fetch(`${base}/api/health/ready`)).ok) return;
       } catch {
@@ -47,6 +50,12 @@ try {
   }
   await ready();
   assert.equal(docker("exec", name, "id", "-u"), "1000");
+  if (platform) {
+    assert.equal(
+      docker("exec", name, "node", "-p", "process.arch"),
+      platform === "linux/amd64" ? "x64" : "arm64",
+    );
+  }
   const html = await (await fetch(base)).text();
   assert.ok(html.includes("Stiva Browser"));
   const config = {
