@@ -182,8 +182,7 @@ validation, lint/types/coverage, dependency auditing, integration tests, browser
 staging run independently. The final `Lint, test, and build` check requires every job to succeed and
 keeps the existing branch-protection check name. Dependency audits include development packages;
 image scans cover OS and application packages. High or critical vulnerabilities block CI and release
-image publication, including vulnerabilities without a fix. Dependabot proposes weekly updates for
-the pinned GitHub Actions commits, npm dependencies, and Docker base images.
+image publication, including vulnerabilities without a fix.
 
 Release publication is serialized across versions. Only the highest stable SemVer Git tag may
 update Docker Hub and GHCR `latest`; older releases and prereleases still publish versioned tags.
