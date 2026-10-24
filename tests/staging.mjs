@@ -68,7 +68,7 @@ const volume = (name) => {
 };
 const port = (name, containerPort, scheme = "http") =>
   `${scheme}://${docker("port", name, `${containerPort}/tcp`).split("\n")[0]}`;
-async function poll(runCheck, description, timeout = 30000) {
+async function poll(runCheck, description, timeout = 30000, detail) {
   const deadline = Date.now() + timeout;
   let last;
   while (Date.now() < deadline) {
@@ -80,7 +80,46 @@ async function poll(runCheck, description, timeout = 30000) {
     }
     await delay(150);
   }
-  throw new Error(`Timed out: ${description}${last ? ` (${last.message})` : ""}`);
+  const reason = last ? (last.cause?.code ?? last.cause?.message ?? last.message) : "";
+  const context = detail ? `\n${detail()}` : "";
+  throw new Error(`Timed out: ${description}${reason ? ` (${reason})` : ""}${context}`);
+}
+function containerState(name) {
+  try {
+    return docker(
+      "inspect",
+      "--format",
+      "status={{.State.Status}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}} error={{.State.Error}}",
+      name,
+    );
+  } catch (error) {
+    return `state unavailable (${error.message.split("\n")[0]})`;
+  }
+}
+function containerLogs(name, tail = 20) {
+  const result = spawnSync("docker", ["logs", "--tail", String(tail), name], { encoding: "utf8" });
+  const output = `${result.stdout ?? ""}${result.stderr ?? ""}`.trim();
+  return output || "(no container output)";
+}
+function gateDiagnostics(name) {
+  const probe = spawnSync(
+    "docker",
+    [
+      "exec",
+      name,
+      "node",
+      "-e",
+      "fetch('http://127.0.0.1:9001/').then(r => console.log('control status', r.status), e => console.error('control error', e.cause?.code ?? e.message))",
+    ],
+    { encoding: "utf8" },
+  );
+  const inside = `${probe.stdout ?? ""}${probe.stderr ?? ""}`.trim() || probe.error?.message;
+  return [
+    `published at ${controlBase}`,
+    `gate ${containerState(name)}`,
+    `inside the container: ${inside || "(no probe output)"}`,
+    containerLogs(name),
+  ].join("\n");
 }
 function stopApp() {
   if (!appName) return;
@@ -226,6 +265,9 @@ async function ready() {
       (await request(base, "/api/health/ready", { signal: AbortSignal.timeout(2000) })).status ===
       200,
     "application readiness",
+    30000,
+    () =>
+      `app ${appName ? containerState(appName) : "not started"}\n${appName ? containerLogs(appName) : ""}`,
   );
 }
 function contents(sizeMiB, seed) {
@@ -467,7 +509,12 @@ try {
     storageImage,
   ]);
   const storageBase = port(storage, 9000);
-  await poll(async () => (await fetch(`${storageBase}/minio/health/ready`)).ok, "S3 readiness");
+  await poll(
+    async () => (await fetch(`${storageBase}/minio/health/ready`)).ok,
+    "S3 readiness",
+    30000,
+    () => `storage ${containerState(storage)}\n${containerLogs(storage)}`,
+  );
   const gate = run(`${prefix}-gate`, [
     "--network-alias",
     "storage-gate",
@@ -487,7 +534,12 @@ try {
     "/harness/storage-gate.mjs",
   ]);
   controlBase = port(gate, 9001);
-  await poll(async () => Boolean(await control()), "storage gate readiness");
+  await poll(
+    async () => Boolean(await control()),
+    "storage gate readiness",
+    30000,
+    () => gateDiagnostics(gate),
+  );
   storageClient = new S3Client({
     endpoint: storageBase,
     region: "us-east-1",

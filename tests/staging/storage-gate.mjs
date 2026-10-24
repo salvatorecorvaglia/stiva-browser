@@ -50,23 +50,30 @@ const server = http.createServer((req, res) => {
   req.pipe(upstream);
 });
 server.on("connection", () => state.connections++);
-server.listen(9000, "0.0.0.0");
-http
-  .createServer(async (req, res) => {
-    if (req.headers.authorization !== `Bearer ${process.env.CONTROL_TOKEN}`) {
-      res.writeHead(401);
-      res.end();
-      return;
-    }
-    if (req.method === "POST") {
-      const chunks = [];
-      for await (const chunk of req) chunks.push(chunk);
-      const input = JSON.parse(Buffer.concat(chunks).toString());
-      for (const name of ["hold", "failComplete", "failAbort"])
-        if (typeof input[name] === "boolean") state[name] = input[name];
-      if (!state.hold) for (const release of [...waiting]) release();
-    }
-    res.setHeader("Content-Type", "application/json");
-    res.end(JSON.stringify({ ...state, pendingParts: waiting.size }));
-  })
-  .listen(9001, "0.0.0.0");
+server.on("error", (error) => {
+  console.error(`storage gate failed to serve 9000: ${error.code ?? error.message}`);
+  process.exit(1);
+});
+server.listen(9000, "0.0.0.0", () => console.log("storage gate listening on 9000"));
+const control = http.createServer(async (req, res) => {
+  if (req.headers.authorization !== `Bearer ${process.env.CONTROL_TOKEN}`) {
+    res.writeHead(401);
+    res.end();
+    return;
+  }
+  if (req.method === "POST") {
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
+    const input = JSON.parse(Buffer.concat(chunks).toString());
+    for (const name of ["hold", "failComplete", "failAbort"])
+      if (typeof input[name] === "boolean") state[name] = input[name];
+    if (!state.hold) for (const release of [...waiting]) release();
+  }
+  res.setHeader("Content-Type", "application/json");
+  res.end(JSON.stringify({ ...state, pendingParts: waiting.size }));
+});
+control.on("error", (error) => {
+  console.error(`storage gate control failed to serve 9001: ${error.code ?? error.message}`);
+  process.exit(1);
+});
+control.listen(9001, "0.0.0.0", () => console.log("storage gate control listening on 9001"));
