@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import https from "node:https";
 import os from "node:os";
 import path from "node:path";
@@ -66,6 +66,37 @@ const volume = (name) => {
   volumes.push(name);
   return name;
 };
+// Fixtures travel through a named volume rather than a host bind mount: some CI
+// Docker daemons cannot see the job's temporary directory, which silently
+// produces an empty mount.
+function seedHarness(name, files) {
+  const script =
+    "const fs = require('node:fs');" +
+    "const files = JSON.parse(fs.readFileSync(0, 'utf8'));" +
+    "for (const [file, contents] of Object.entries(files)) fs.writeFileSync('/harness/' + file, contents);" +
+    "console.log(fs.readdirSync('/harness').sort().join(' '));";
+  const listed = execFileSync(
+    "docker",
+    [
+      "run",
+      "--rm",
+      "-i",
+      "--network",
+      "none",
+      "-v",
+      `${name}:/harness`,
+      "node:24-alpine",
+      "node",
+      "-e",
+      script,
+    ],
+    { input: JSON.stringify(files), encoding: "utf8" },
+  )
+    .trim()
+    .split(" ")
+    .sort();
+  assert.deepEqual(listed, Object.keys(files).sort(), "Harness volume must contain every fixture");
+}
 const port = (name, containerPort, scheme = "http") =>
   `${scheme}://${docker("port", name, `${containerPort}/tcp`).split("\n")[0]}`;
 async function poll(runCheck, description, timeout = 30000, detail) {
@@ -81,7 +112,7 @@ async function poll(runCheck, description, timeout = 30000, detail) {
     await delay(150);
   }
   const reason = last ? (last.cause?.code ?? last.cause?.message ?? last.message) : "";
-  const context = detail ? `\n${detail()}` : "";
+  const context = detail ? `\n${await detail()}` : "";
   throw new Error(`Timed out: ${description}${reason ? ` (${reason})` : ""}${context}`);
 }
 function containerState(name) {
@@ -312,6 +343,13 @@ async function profile(id, sizeMiB, label) {
   await poll(
     async () => (await control()).pendingParts >= 8,
     "eight bounded in-flight upload parts",
+    30000,
+    async () =>
+      [
+        `gate ${JSON.stringify(await control())}`,
+        `app ${containerState(appName)}`,
+        containerLogs(appName, 40),
+      ].join("\n"),
   );
   const held = await metrics();
   assert.equal(metric(held, "stiva_storage_active", "upload"), 4);
@@ -386,6 +424,7 @@ let controlBase;
 let prometheusBase;
 let proxyAddress;
 const bucket = `stiva-stage-${suffix}`;
+const prometheusConfig = `global:\n  scrape_interval: 1s\n  evaluation_interval: 1s\nrule_files:\n  - /rules/alerts.yml\nscrape_configs:\n  - job_name: stiva\n    metrics_path: /api/metrics\n    static_configs:\n      - targets: ['app:3000']\n`;
 try {
   const candidateId = docker("image", "inspect", "--format", "{{.Id}}", candidate);
   let baseline = process.env.STIVA_BASELINE_IMAGE;
@@ -439,11 +478,7 @@ try {
   networks.push(network);
   const working = volume(`${prefix}-data`);
   const backup = volume(`${prefix}-backup`);
-  await cp(path.join(root, "tests/staging/gateway.mjs"), path.join(temporary, "gateway.mjs"));
-  await cp(
-    path.join(root, "tests/staging/storage-gate.mjs"),
-    path.join(temporary, "storage-gate.mjs"),
-  );
+  const fixtures = volume(`${prefix}-fixtures`);
   execFileSync(
     "openssl",
     [
@@ -469,6 +504,15 @@ try {
     keepAlive: true,
     ca: await readFile(path.join(temporary, "cert.pem")),
   });
+  seedHarness(fixtures, {
+    "gateway.mjs": await readFile(path.join(root, "tests/staging/gateway.mjs"), "utf8"),
+    "storage-gate.mjs": await readFile(path.join(root, "tests/staging/storage-gate.mjs"), "utf8"),
+    "key.pem": await readFile(path.join(temporary, "key.pem"), "utf8"),
+    "cert.pem": await readFile(path.join(temporary, "cert.pem"), "utf8"),
+    "prometheus.yml": prometheusConfig,
+    "alerts.yml": await readFile(path.join(root, "monitoring/alerts.yml"), "utf8"),
+    "alerts.test.yml": await readFile(path.join(root, "monitoring/alerts.test.yml"), "utf8"),
+  });
   const proxy = run(`${prefix}-proxy`, [
     "--read-only",
     "--cap-drop",
@@ -478,7 +522,7 @@ try {
     "-e",
     `AUTH_TOKEN=${auth}`,
     "-v",
-    `${temporary}:/harness:ro`,
+    `${fixtures}:/harness:ro`,
     "-p",
     "127.0.0.1::8443",
     "node:24-alpine",
@@ -524,7 +568,7 @@ try {
     "-e",
     `CONTROL_TOKEN=${controlToken}`,
     "-v",
-    `${temporary}:/harness:ro`,
+    `${fixtures}:/harness:ro`,
     "-p",
     "127.0.0.1::9000",
     "-p",
@@ -601,8 +645,6 @@ try {
     "cross-origin changes rejected",
   );
 
-  const promConfig = `global:\n  scrape_interval: 1s\n  evaluation_interval: 1s\nrule_files:\n  - /rules/alerts.yml\nscrape_configs:\n  - job_name: stiva\n    metrics_path: /api/metrics\n    static_configs:\n      - targets: ['app:3000']\n`;
-  await writeFile(path.join(temporary, "prometheus.yml"), promConfig);
   docker(
     "run",
     "--rm",
@@ -611,7 +653,7 @@ try {
     "--entrypoint",
     "promtool",
     "-v",
-    `${path.join(root, "monitoring")}:/rules:ro`,
+    `${fixtures}:/rules:ro`,
     "-w",
     "/rules",
     prometheusImage,
@@ -624,9 +666,9 @@ try {
     "--tmpfs",
     "/prometheus:rw,uid=65534,gid=65534,size=64m",
     "-v",
-    `${path.join(temporary, "prometheus.yml")}:/etc/prometheus/prometheus.yml:ro`,
+    `${fixtures}:/etc/prometheus:ro`,
     "-v",
-    `${path.join(root, "monitoring")}:/rules:ro`,
+    `${fixtures}:/rules:ro`,
     "-p",
     "127.0.0.1::9090",
     prometheusImage,
