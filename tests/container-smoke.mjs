@@ -52,6 +52,20 @@ try {
   }
   await ready();
   assert.equal(docker("exec", name, "id", "-u"), "1000");
+  docker(
+    "exec",
+    name,
+    "node",
+    "--input-type=module",
+    "-e",
+    `import assert from 'node:assert/strict';
+     import { existsSync, readdirSync } from 'node:fs';
+     for (const path of [
+       '/usr/local/lib/node_modules/npm', '/usr/local/lib/node_modules/corepack',
+       ...['npm', 'npx', 'corepack', 'pnpm', 'pnpx', 'yarn', 'yarnpkg'].map(name => '/usr/local/bin/' + name),
+     ]) assert.equal(existsSync(path), false, path + ' must be absent');
+     assert.ok(readdirSync('/opt').every(name => !name.startsWith('yarn')));`,
+  );
   if (platform) {
     assert.equal(
       docker("exec", name, "node", "-p", "process.arch"),
