@@ -2,13 +2,14 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 import { mockStorage, reset } from "./fixtures";
 
+test.use({ colorScheme: "dark" });
+
 test.beforeEach(async ({ page }) => {
   await reset(page);
   await mockStorage(page);
 });
 
 test("theme follows system changes and remembers explicit preferences", async ({ page }) => {
-  await page.emulateMedia({ colorScheme: "dark" });
   await page.goto("/");
   const root = page.locator("html");
   const picker = page.getByLabel("Color theme");
@@ -28,7 +29,6 @@ test("theme follows system changes and remembers explicit preferences", async ({
 });
 
 test("dark workspace and server dialog remain accessible", async ({ page }) => {
-  await page.emulateMedia({ colorScheme: "dark" });
   await page.goto("/");
   for (const dialog of [false, true]) {
     if (dialog) await page.getByRole("button", { name: "Manage servers" }).click();

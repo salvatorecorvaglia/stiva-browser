@@ -153,8 +153,10 @@ test("server switching clears bucket context and uses the correct header", async
   await page.goto("/");
   await page
     .getByRole("navigation", { name: "Buckets" })
+    .getByRole("region", { name: "One", exact: true })
     .getByRole("button", { name: "project-assets" })
     .click();
+  await expect(page.getByRole("heading", { name: "project-assets." })).toBeVisible();
   const next = page.waitForRequest(
     (req) => req.url().endsWith("/api/buckets") && req.headers()["x-s3-server-id"] === second.id,
   );
