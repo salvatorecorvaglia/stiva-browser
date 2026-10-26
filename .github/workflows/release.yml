@@ -24,12 +24,12 @@ jobs:
       RELEASE_TAG: ${{ github.ref_name }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           persist-credentials: false
 
       - name: Set up Node.js
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version: 24
 
@@ -71,7 +71,7 @@ jobs:
           test -n "$DOCKERHUB_TOKEN" || { echo "DOCKERHUB_TOKEN is required."; exit 1; }
 
       - name: Upload release notes
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: release-notes
           path: ${{ runner.temp }}/release-notes.md
@@ -101,33 +101,33 @@ jobs:
       packages: write
     steps:
       - name: Check out repository
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           persist-credentials: false
 
       - name: Set up Node.js
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version: 24
 
       - name: Set up Docker with containerd
-        uses: docker/setup-docker-action@7ec28a010822b4626af4874f9448a4b05ac6f3e5 # v5
+        uses: docker/setup-docker-action@7ec28a010822b4626af4874f9448a4b05ac6f3e5
         with:
           daemon-config: |
             { "features": { "containerd-snapshotter": true } }
 
       - name: Set up Buildx
-        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069
 
       - name: Generate image labels
         id: meta
-        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302
         with:
           images: corvaglia91/stiva-browser
           tags: type=semver,pattern={{version}}
 
       - name: Build and load native image
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc
         with:
           context: .
           platforms: linux/${{ matrix.arch }}
@@ -138,11 +138,14 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=release-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=release-${{ matrix.arch }}
-          provenance: mode=max
-          sbom: true
+
+      - name: Verify the native image is available locally
+        env:
+          IMAGE: corvaglia91/stiva-browser:build-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.arch }}
+        run: docker image inspect "$IMAGE" >/dev/null
 
       - name: Scan native release image
-        uses: anchore/scan-action@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2 # v7
+        uses: anchore/scan-action@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2
         with:
           image: corvaglia91/stiva-browser:build-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.arch }}
           fail-build: true
@@ -157,13 +160,13 @@ jobs:
         run: node tests/container-smoke.mjs
 
       - name: Log in to Docker Hub
-        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Log in to GHCR
-        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -186,7 +189,7 @@ jobs:
           done
 
       - name: Upload tested image references
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: image-digests-${{ matrix.arch }}
           path: ${{ runner.temp }}/digests/*.txt
@@ -206,28 +209,28 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           persist-credentials: false
 
       - name: Download release notes
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
         with:
           name: release-notes
           path: ${{ runner.temp }}
 
       - name: Set up Buildx
-        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069
 
       - name: Download tested image references
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
         with:
           pattern: image-digests-*
           path: ${{ runner.temp }}/digests
           merge-multiple: true
 
       - name: Set up Node.js
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version: 24
 
@@ -242,7 +245,7 @@ jobs:
 
       - name: Generate image tags and labels
         id: meta
-        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302
         with:
           images: |
             corvaglia91/stiva-browser
@@ -254,13 +257,13 @@ jobs:
             type=raw,value=latest,enable=${{ steps.latest.outputs.publish == 'true' }}
 
       - name: Log in to Docker Hub
-        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Log in to GHCR
-        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
