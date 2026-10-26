@@ -95,16 +95,16 @@ For a consistent offline backup, stop the process/container, copy the entire dat
 ## Docker
 
 ```sh
-docker pull corvaglia91/stiva-browser:1.1.0
+docker pull corvaglia91/stiva-browser:1.2.0
 docker volume create stiva-data
-docker run --name stiva-browser --init -p 127.0.0.1:3000:3000 -v stiva-data:/data corvaglia91/stiva-browser:1.1.0
+docker run --name stiva-browser --init -p 127.0.0.1:3000:3000 -v stiva-data:/data corvaglia91/stiva-browser:1.2.0
 ```
 
 The image runs as UID 1000 and serves on port 3000. For bind mounts, pre-create a writable data directory for UID 1000. The host machine's `localhost` is not an S3 server inside a container: use a Docker-network service name, an accessible hostname, or `host.docker.internal` where supported.
 
 ## Kubernetes
 
-The deployment uses `corvaglia91/stiva-browser:1.1.0`; you can also use the corresponding GHCR image. Change the ingress hostname and attach your existing authentication middleware and HTTPS configuration. Then:
+The deployment uses `corvaglia91/stiva-browser:1.2.0`; you can also use the corresponding GHCR image. Change the ingress hostname and attach your existing authentication middleware and HTTPS configuration. Then:
 
 ```sh
 kubectl apply -f k8s/
