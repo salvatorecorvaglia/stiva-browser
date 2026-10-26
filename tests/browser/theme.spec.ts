@@ -7,10 +7,15 @@ test.use({ colorScheme: "dark" });
 test.beforeEach(async ({ page }) => {
   await reset(page);
   await mockStorage(page);
+  // Apply media emulation to the page as well as the context before navigation.
+  await page.emulateMedia({ colorScheme: "dark" });
 });
 
 test("theme follows system changes and remembers explicit preferences", async ({ page }) => {
   await page.goto("/");
+  await expect
+    .poll(() => page.evaluate(() => matchMedia("(prefers-color-scheme: dark)").matches))
+    .toBe(true);
   const root = page.locator("html");
   const picker = page.getByLabel("Color theme");
   await expect(picker).toHaveValue("system");
@@ -30,6 +35,7 @@ test("theme follows system changes and remembers explicit preferences", async ({
 
 test("dark workspace and server dialog remain accessible", async ({ page }) => {
   await page.goto("/");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   for (const dialog of [false, true]) {
     if (dialog) await page.getByRole("button", { name: "Manage servers" }).click();
     const result = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa"]).analyze();
