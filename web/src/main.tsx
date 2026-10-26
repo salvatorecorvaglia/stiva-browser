@@ -73,6 +73,7 @@ function App() {
     void transferRef.current?.startUpload(files);
   });
   const contextVersion = useRef(0);
+  const pendingBucket = useRef<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const server = servers.find((item) => item.id === serverId);
   const serverContext = `${serverId}:${server?.revision ?? ""}`;
@@ -95,11 +96,15 @@ function App() {
   }, []);
   const notify = useCallback((text: string, error = false) => setNotice({ text, error }), []);
 
-  const loadServers = useCallback(async () => {
+  const loadServers = useCallback(async (savedId?: string) => {
     const result = await api<Server[]>("/api/servers");
     setServers(result);
     setServerId((current) =>
-      result.some((item) => item.id === current) ? current : (result[0]?.id ?? ""),
+      savedId && result.some((item) => item.id === savedId)
+        ? savedId
+        : result.some((item) => item.id === current)
+          ? current
+          : (result[0]?.id ?? ""),
     );
   }, []);
   useEffect(() => {
@@ -113,7 +118,8 @@ function App() {
   // biome-ignore lint/correctness/useExhaustiveDependencies: configuration identity invalidates the workspace.
   useEffect(() => {
     contextVersion.current++;
-    setBucket("");
+    setBucket(pendingBucket.current ?? "");
+    pendingBucket.current = null;
     setPrefix("");
     setTokens([undefined]);
     setPage(0);
@@ -209,6 +215,13 @@ function App() {
       />
 
       <WorkspaceSidebar
+        servers={servers}
+        bucketRevision={bucketRevision}
+        openBucket={(id, name) => {
+          if (id !== serverId) pendingBucket.current = name;
+          setServerId(id);
+          navigate(name);
+        }}
         buckets={buckets}
         bucket={bucket}
         serverId={serverId}

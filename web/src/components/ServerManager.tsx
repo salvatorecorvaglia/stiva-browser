@@ -30,7 +30,7 @@ export function ServerManager({
 }: {
   servers: Server[];
   onClose: () => void;
-  onChange: () => Promise<void>;
+  onChange: (savedId?: string) => Promise<void>;
   notify: (text: string, error?: boolean) => void;
 }) {
   const [editing, setEditing] = useState<string | null>(null);
@@ -75,16 +75,16 @@ export function ServerManager({
     const pending = new AbortController();
     controller.current = pending;
     try {
-      await api(editing ? `/api/servers/${editing}` : "/api/servers", {
+      const saved = await api<Server>(editing ? `/api/servers/${editing}` : "/api/servers", {
         method: editing ? "PUT" : "POST",
         headers: editingRevision ? { "If-Match": `"${editingRevision}"` } : undefined,
         body: JSON.stringify(payload()),
         signal: pending.signal,
       });
-      await onChange();
+      await onChange(saved.id);
       if (pending.signal.aborted) return;
-      choose();
       notify(editing ? "Server updated" : "Server connected");
+      onClose();
     } catch (err) {
       if (!pending.signal.aborted) setError((err as Error).message);
     } finally {

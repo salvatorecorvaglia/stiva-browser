@@ -3,7 +3,7 @@ a {
   text-decoration: none;
 }
 .eyebrow-icon {
-  background: #eef3f5;
+  background: var(--surface-eef3f5);
   width: 24px;
   height: 24px;
   display: grid;
@@ -37,7 +37,7 @@ a {
   color: var(--color-success);
   display: grid;
   place-items: center;
-  background: #f0f6f2;
+  background: var(--surface-f0f6f2);
   width: 59px;
   height: 59px;
   border-radius: 13px;
@@ -46,7 +46,7 @@ a {
 .empty-state h3 {
   font-size: 14px;
   font-weight: 550;
-  color: #65776b;
+  color: var(--ink-65776b);
   margin: 0 0 8px;
 }
 .empty-state p {
@@ -69,8 +69,8 @@ a {
   gap: 12px;
   align-items: center;
   padding: 20px;
-  background: #fff7f4;
-  border: 1px solid #f7e2db;
+  background: var(--surface-fff7f4);
+  border: 1px solid var(--line-f7e2db);
   border-radius: var(--radius-control);
   color: var(--color-danger);
   margin-bottom: 18px;

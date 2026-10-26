@@ -6,5 +6,10 @@ export default defineConfig({
   root: "web",
   plugins: [react(), tailwindcss()],
   build: { outDir: "../dist/web", emptyOutDir: true },
-  server: { proxy: { "/api": "http://127.0.0.1:3000" } },
+  server: {
+    proxy: {
+      // Preserve the browser's Host so API origin checks also work in development.
+      "/api": { target: "http://127.0.0.1:3000", changeOrigin: false },
+    },
+  },
 });

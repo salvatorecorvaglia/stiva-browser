@@ -1,6 +1,7 @@
 import { Archive, ChevronDown, Menu, Server as ServerIcon, Settings2 } from "lucide-react";
 import type { Dispatch, Ref, SetStateAction } from "react";
 import type { Server } from "../api";
+import { ThemePicker } from "./ThemePicker";
 
 export function WorkspaceHeader({
   servers,
@@ -45,6 +46,7 @@ export function WorkspaceHeader({
       </a>
       <div className="workspace-label">S3 workspace</div>
       <div className="topbar-right">
+        <ThemePicker />
         <div className="server-selector">
           <ServerIcon size={15} />
           <select

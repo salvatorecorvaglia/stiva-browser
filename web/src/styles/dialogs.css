@@ -2,14 +2,14 @@
   width: 100%;
   min-height: 130px;
   resize: vertical;
-  border: 1px solid #dfe8e2;
+  border: 1px solid var(--line-dfe8e2);
   border-radius: var(--radius-control);
   padding: 12px;
   font-family: monospace;
   font-size: 11px;
-  color: #4f6758;
+  color: var(--ink-4f6758);
   overflow-wrap: anywhere;
-  background: #fafcfb;
+  background: var(--surface-fafcfb);
 }
 .modal::backdrop {
   background: #172c3b65;
@@ -20,7 +20,7 @@
   padding: 0;
   margin: auto;
   color: inherit;
-  background: white;
+  background: var(--surface-ffffff);
   max-width: 480px;
   width: calc(100% - 50px);
   border-radius: 13px;
@@ -38,7 +38,7 @@
   align-items: flex-start;
   gap: 20px;
   padding: 24px 26px;
-  border-bottom: 1px solid #eaf0ed;
+  border-bottom: 1px solid var(--line-eaf0ed);
 }
 .modal-heading h2 {
   margin: 0;
@@ -59,8 +59,8 @@
   grid-template-columns: 220px 1fr;
 }
 .saved-servers {
-  background: #fafcfb;
-  border-right: 1px solid #e9efeb;
+  background: var(--surface-fafcfb);
+  border-right: 1px solid var(--line-e9efeb);
   padding: 23px 13px;
   min-height: 460px;
 }
@@ -82,8 +82,8 @@
   border: 1px solid transparent;
 }
 .saved-server.active {
-  background: #ecf6f0;
-  border-color: #dceee2;
+  background: var(--surface-ecf6f0);
+  border-color: var(--line-dceee2);
 }
 .saved-server > button:first-child {
   display: flex;
@@ -102,7 +102,7 @@
   display: block;
   font-size: 11px;
   font-weight: 550;
-  color: #567763;
+  color: var(--ink-567763);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -157,18 +157,18 @@
   gap: 7px;
   font-size: 11px;
   font-weight: 550;
-  color: #62716a;
+  color: var(--ink-62716a);
   margin-bottom: 16px;
 }
 .server-form input:not([type="checkbox"]),
 .simple-form input {
   width: 100%;
-  border: 1px solid #dfe8e2;
+  border: 1px solid var(--line-dfe8e2);
   border-radius: var(--radius-control);
-  background: #fdfefd;
+  background: var(--surface-fdfefd);
   padding: 10px 11px;
   font-size: 11px;
-  color: #3c5b49;
+  color: var(--ink-3c5b49);
   font-weight: 400;
 }
 .form-columns {
@@ -180,7 +180,7 @@
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  border-top: 1px solid #edf1ee;
+  border-top: 1px solid var(--line-edf1ee);
   padding-top: 20px;
   margin-top: 17px;
 }
@@ -199,12 +199,12 @@
   margin-top: 1px;
 }
 .form-message.success {
-  color: #39845d;
-  background: #edf8f0;
+  color: var(--ink-39845d);
+  background: var(--surface-edf8f0);
 }
 .form-message.error {
-  color: #b65c51;
-  background: #fff1ed;
+  color: var(--ink-b65c51);
+  background: var(--surface-fff1ed);
 }
 .simple-form {
   padding: 24px 26px;
@@ -214,8 +214,8 @@
   line-height: 1.7;
 }
 .delete-list {
-  border: 1px solid #e8ede9;
-  background: #fafcfb;
+  border: 1px solid var(--line-e8ede9);
+  background: var(--surface-fafcfb);
   border-radius: 7px;
   max-height: 200px;
   overflow: auto;
@@ -239,7 +239,7 @@
   display: flex;
   gap: 22px;
   padding: 0 26px;
-  border-bottom: 1px solid #e8ede9;
+  border-bottom: 1px solid var(--line-e8ede9);
 }
 .inspect-tabs button {
   display: flex;
@@ -262,7 +262,7 @@
 }
 .inspect-footer {
   padding: 18px 24px;
-  border-top: 1px solid #edf0ee;
+  border-top: 1px solid var(--line-edf0ee);
   display: flex;
   justify-content: space-between;
   gap: 12px;
@@ -272,9 +272,9 @@
   font-size: 12px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  color: #526a5d;
-  background: #f8fbf9;
-  border: 1px solid #eaf0ec;
+  color: var(--ink-526a5d);
+  background: var(--surface-f8fbf9);
+  border: 1px solid var(--line-eaf0ec);
   border-radius: 7px;
   padding: 18px;
   line-height: 1.8;
@@ -299,7 +299,7 @@
 }
 .metadata dd {
   margin: 0;
-  color: #4f6758;
+  color: var(--ink-4f6758);
   overflow-wrap: anywhere;
 }
 @media (max-width: 680px) {
@@ -319,7 +319,7 @@
   .saved-servers {
     min-height: 0;
     border-right: 0;
-    border-bottom: 1px solid #e9efeb;
+    border-bottom: 1px solid var(--line-e9efeb);
     padding: 15px;
     max-height: 180px;
     overflow: auto;

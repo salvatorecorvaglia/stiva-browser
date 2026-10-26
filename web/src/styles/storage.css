@@ -8,8 +8,8 @@
   display: flex;
   gap: 12px;
   align-items: center;
-  background: white;
-  border: 1px solid #e7ecef;
+  background: var(--surface-ffffff);
+  border: 1px solid var(--line-e7ecef);
   border-radius: 7px;
   padding: 17px 16px;
   min-width: 0;
@@ -19,9 +19,9 @@
   display: grid;
   place-items: center;
   flex-shrink: 0;
-  background: #f3f7f7;
+  background: var(--surface-f3f7f7);
   color: var(--color-muted);
-  border: 1px solid #e9eeee;
+  border: 1px solid var(--line-e9eeee);
   width: 36px;
   height: 38px;
   border-radius: 7px;
@@ -43,7 +43,7 @@
   display: block;
   margin-top: 6px;
   font-weight: 600;
-  color: #465866;
+  color: var(--ink-465866);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -52,19 +52,19 @@
   font-size: 12px;
 }
 .objects-panel {
-  border: 1px solid #e3e9ed;
+  border: 1px solid var(--line-e3e9ed);
   border-radius: 8px;
-  background: white;
+  background: var(--surface-ffffff);
   box-shadow: 0 3px 9px #253a4703;
   overflow: hidden;
 }
 .pathbar {
-  background: #fcfdfd;
+  background: var(--surface-fcfdfd);
   display: flex;
   align-items: center;
   gap: 11px;
   padding: 11px 18px;
-  border-bottom: 1px solid #e9edf0;
+  border-bottom: 1px solid var(--line-e9edf0);
   color: var(--color-muted);
   min-height: 49px;
 }
@@ -80,7 +80,7 @@
 }
 .breadcrumbs button {
   font-size: 10px;
-  color: #5c746b;
+  color: var(--ink-5c746b);
 }
 .breadcrumbs button:hover {
   text-decoration: underline;
@@ -100,7 +100,7 @@
   display: flex;
   gap: 9px;
   align-items: center;
-  border: 1px solid #e6eaee;
+  border: 1px solid var(--line-e6eaee);
   border-radius: 5px;
   padding: 7px 10px;
   color: var(--color-muted);
@@ -138,7 +138,7 @@ table {
   white-space: nowrap;
 }
 thead {
-  background: #fafbfc;
+  background: var(--surface-fafbfc);
   color: var(--color-muted);
 }
 th {
@@ -146,8 +146,8 @@ th {
   font-weight: 550;
   letter-spacing: 0.1px;
   padding: 12px 15px;
-  border-top: 1px solid #edf0f2;
-  border-bottom: 1px solid #edf0f2;
+  border-top: 1px solid var(--line-edf0f2);
+  border-bottom: 1px solid var(--line-edf0f2);
 }
 th:nth-child(2) > svg {
   display: inline;
@@ -155,7 +155,7 @@ th:nth-child(2) > svg {
   vertical-align: middle;
 }
 td {
-  border-bottom: 1px solid #f0f3f5;
+  border-bottom: 1px solid var(--line-f0f3f5);
   padding: 14px 15px;
   height: 61px;
   color: var(--color-muted);
@@ -164,10 +164,10 @@ tbody tr:last-child td {
   border-bottom: 0;
 }
 tbody tr:hover {
-  background: #fcfdfd;
+  background: var(--surface-fcfdfd);
 }
 tbody tr.selected {
-  background: #f1faf7;
+  background: var(--surface-f1faf7);
 }
 .checkbox-cell {
   width: 39px;
@@ -181,7 +181,7 @@ tbody tr.selected {
   text-align: left;
   font-size: 11px;
   font-weight: 500;
-  color: #4b5d6c;
+  color: var(--ink-4b5d6c);
   width: 100%;
 }
 .object-name > span:not(.file-icon) {
@@ -193,27 +193,27 @@ tbody tr.selected {
   width: 29px;
   height: 32px;
   border-radius: 5px;
-  background: #f1f4f8;
+  background: var(--surface-f1f4f8);
   color: var(--color-muted);
   display: grid;
   place-items: center;
   flex-shrink: 0;
 }
 .file-icon.folder {
-  background: #fff7e6;
+  background: var(--surface-fff7e6);
   color: var(--color-folder);
 }
 .file-icon.image {
   color: var(--color-image);
-  background: #f6f1fb;
+  background: var(--surface-f6f1fb);
 }
 .file-icon.code {
   color: var(--color-code);
-  background: #edf5fa;
+  background: var(--surface-edf5fa);
 }
 .file-icon.archive {
   color: var(--color-archive);
-  background: #fbf3ec;
+  background: var(--surface-fbf3ec);
 }
 .folder-arrow {
   color: var(--color-muted);
@@ -244,7 +244,7 @@ tbody tr.selected {
   padding-right: 26px;
 }
 .table-footer {
-  border-top: 1px solid #ebeff2;
+  border-top: 1px solid var(--line-ebeff2);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -266,7 +266,7 @@ tbody tr.selected {
 .table-footer .icon-button {
   width: 23px;
   height: 23px;
-  border: 1px solid #e7ecef;
+  border: 1px solid var(--line-e7ecef);
 }
 .transfer-hint {
   display: flex;
@@ -301,7 +301,7 @@ tbody tr.selected {
   position: fixed;
   z-index: 35;
   inset: 90px 15px 15px 261px;
-  background: #f0fbf5f5;
+  background: var(--surface-fafcfb);
   backdrop-filter: blur(6px);
   border: 2px dashed #69b496;
   border-radius: 15px;
@@ -507,12 +507,12 @@ tbody tr.selected {
   .objects-panel .table-scroll :is(td, th):last-child {
     position: sticky;
     right: 0;
-    background: white;
+    background: var(--surface-ffffff);
   }
   .objects-panel .table-scroll th:last-child {
-    background: #fafbfc;
+    background: var(--surface-fafbfc);
   }
   .objects-panel tr.selected td:last-child {
-    background: #f1faf7;
+    background: var(--surface-f1faf7);
   }
 }

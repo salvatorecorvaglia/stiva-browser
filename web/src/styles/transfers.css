@@ -4,8 +4,8 @@
   right: 24px;
   z-index: 45;
   width: 340px;
-  background: white;
-  border: 1px solid #e1eae5;
+  background: var(--surface-ffffff);
+  border: 1px solid var(--line-e1eae5);
   border-radius: 10px;
   box-shadow: 0 10px 40px #1435231a;
   max-height: 55vh;
@@ -16,7 +16,7 @@
   justify-content: space-between;
   align-items: center;
   padding: 12px 15px;
-  border-bottom: 1px solid #edf2ee;
+  border-bottom: 1px solid var(--line-edf2ee);
 }
 .transfers-heading strong {
   display: flex;
@@ -24,11 +24,11 @@
   gap: 9px;
   font-size: 12px;
   font-weight: 550;
-  color: #587b64;
+  color: var(--ink-587b64);
 }
 .transfer-item {
   padding: 12px 15px;
-  border-bottom: 1px solid #edf1ee;
+  border-bottom: 1px solid var(--line-edf1ee);
 }
 .transfer-item > div:first-child {
   display: flex;
@@ -39,7 +39,7 @@
 .transfer-item strong {
   font-size: 10px;
   font-weight: 500;
-  color: #597361;
+  color: var(--ink-597361);
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -57,7 +57,7 @@
   margin-top: 7px;
 }
 .progress-track {
-  background: #edf4ef;
+  background: var(--surface-edf4ef);
   height: 3px;
   border-radius: 5px;
   overflow: hidden;
@@ -73,8 +73,8 @@
   bottom: 25px;
   left: 50%;
   transform: translateX(-50%);
-  background: white;
-  border: 1px solid #dcebe1;
+  background: var(--surface-ffffff);
+  border: 1px solid var(--line-dcebe1);
   box-shadow: 0 5px 30px #1a3e2520;
   border-radius: 8px;
   padding: 12px 14px;
@@ -83,7 +83,7 @@
   gap: 10px;
   z-index: 80;
   font-size: 11px;
-  color: #477d5d;
+  color: var(--ink-477d5d);
   max-width: calc(100vw - 35px);
 }
 .toast > svg {
@@ -91,7 +91,7 @@
 }
 .toast.error {
   color: var(--color-danger);
-  border-color: #f1dcd6;
+  border-color: var(--line-f1dcd6);
 }
 .toast .icon-button {
   width: 22px;

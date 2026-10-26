@@ -24,14 +24,18 @@ test("empty workspace, server CRUD, bucket and folder navigation, search and saf
   await page.getByRole("button", { name: "Test connection" }).click();
   await expect(page.getByRole("status")).toContainText("Connected successfully");
   await page.getByRole("button", { name: "Add server", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "Manage servers" })).not.toBeVisible();
+  await expect(page.getByLabel("Select S3 server").locator("option:checked")).toHaveText(
+    "Development",
+  );
+  await page.getByRole("button", { name: "Manage servers" }).click();
   await expect(page.getByRole("button", { name: "Development us-east-1" })).toBeVisible();
   await page.getByRole("button", { name: "Development us-east-1" }).click();
   await expect(page.getByLabel("Access key", { exact: true })).toHaveValue("");
   await expect(page.getByLabel("Secret key", { exact: true })).toHaveValue("");
   await page.getByLabel("Server name").fill("Development updated");
   await page.getByRole("button", { name: "Save changes" }).click();
-  await expect(page.getByRole("button", { name: "Development updated us-east-1" })).toBeVisible();
-  await page.getByRole("button", { name: "Close dialog" }).click();
+  await expect(page.getByRole("dialog", { name: "Manage servers" })).not.toBeVisible();
   await page
     .getByRole("navigation", { name: "Buckets" })
     .getByRole("button", { name: "project-assets" })
@@ -624,4 +628,40 @@ test("copied S3 URIs omit the server name and stale signed links do not reopen d
   await responded;
   await expect(page.getByRole("button", { name: "notes.txt", exact: true })).toBeVisible();
   await expect(page.getByRole("dialog")).not.toBeVisible();
+});
+
+test("sidebar groups buckets by server and opens a bucket on another server", async ({ page }) => {
+  const ids: string[] = [];
+  for (const name of ["Development", "Production"]) {
+    const response = await page.request.post("/api/servers", {
+      data: {
+        name,
+        endpoint_url: "http://127.0.0.1:9000",
+        region: "us-east-1",
+        access_key: "fixture",
+        secret_key: "fixture-secret",
+        force_path_style: true,
+      },
+    });
+    ids.push((await response.json()).id);
+  }
+  await page.goto("/");
+  const navigation = page.getByRole("navigation", { name: "Buckets" });
+  for (const name of ["Development", "Production"]) {
+    await expect(
+      navigation
+        .getByRole("region", { name, exact: true })
+        .getByRole("button", { name: "project-assets", exact: true }),
+    ).toBeVisible();
+  }
+  const selectedId = await page.getByLabel("Select S3 server").inputValue();
+  const targetIndex = selectedId === ids[0] ? 1 : 0;
+  const targetName = ["Development", "Production"][targetIndex];
+  await navigation
+    .getByRole("region", { name: targetName, exact: true })
+    .getByRole("button", { name: "project-assets", exact: true })
+    .click();
+  await expect(page.getByLabel("Select S3 server")).toHaveValue(ids[targetIndex]);
+  await expect(page.getByRole("heading", { name: "project-assets." })).toBeVisible();
+  await expect(page.getByRole("button", { name: "hello.txt", exact: true })).toBeVisible();
 });

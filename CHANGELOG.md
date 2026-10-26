@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add light, dark, and system themes with a persistent preference and live updates when the system theme changes.
+
+### Changed
+
+- Group sidebar buckets by server and switch connections automatically when opening a bucket from another server.
+
+### Fixed
+
+- Preserve the browser's Host header through the Vite development proxy so same-origin API changes are accepted.
+- Close the server manager after saving and select the saved server in the workspace.
+
 ## [1.1.0] - 2026-10-24
 
 ### Added
