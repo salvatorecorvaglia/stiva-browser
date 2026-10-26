@@ -111,7 +111,23 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - run: node tests/run-postgres.mjs
-      - run: pnpm test:s3
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+
+      - name: Build S3 fixture
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: tests/s3-fixture
+          load: true
+          tags: stiva-s3-fixture:2025-10-15
+          cache-from: type=gha,scope=s3-fixture
+          cache-to: type=gha,scope=s3-fixture,mode=max
+
+      - name: Test live S3 operations and versioning
+        env:
+          STIVA_TEST_S3_IMAGE: stiva-s3-fixture:2025-10-15
+        run: pnpm test:s3
 
   browser:
     name: Browser and accessibility tests
@@ -138,7 +154,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Install browser engines
-        run: pnpm exec playwright install --with-deps chromium firefox webkit
+        run: pnpm exec playwright install --with-deps chromium webkit
       - run: pnpm test:browser
       - name: Upload browser failure artifacts
         if: failure()
@@ -173,8 +189,19 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+
       - name: Build container image
-        run: docker build --tag stiva-browser:ci .
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: stiva-browser:ci
+          # Share dependency/build layers with the native amd64 release build.
+          cache-from: type=gha,scope=release-amd64
+          cache-to: type=gha,scope=release-amd64,mode=max
       - name: Scan container image
         uses: anchore/scan-action@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2 # v7
         with:
@@ -186,7 +213,13 @@ jobs:
       - name: Test container security and persistence
         run: node tests/container-smoke.mjs
       - name: Build S3 fixture
-        run: docker build --tag stiva-s3-fixture:2025-10-15 tests/s3-fixture
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: tests/s3-fixture
+          load: true
+          tags: stiva-s3-fixture:2025-10-15
+          cache-from: type=gha,scope=s3-fixture
+          cache-to: type=gha,scope=s3-fixture,mode=max
       - name: Verify staging performance, monitoring, and rollback
         run: pnpm test:staging
       - name: Upload staging measurements

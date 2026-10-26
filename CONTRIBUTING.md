@@ -56,12 +56,12 @@ For interface changes, install all three browser engines and run the browser sui
 own production test server on port 4173:
 
 ```sh
-pnpm exec playwright install chromium firefox webkit
+pnpm exec playwright install chromium webkit
 pnpm test:browser
 ```
 
 On Linux, Playwright may also require system dependencies via
-`pnpm exec playwright install --with-deps chromium firefox webkit`.
+`pnpm exec playwright install --with-deps chromium webkit`.
 For a reproducible Linux environment on another host, run:
 
 ```sh

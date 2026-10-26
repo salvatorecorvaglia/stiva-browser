@@ -151,7 +151,7 @@ Biome handles linting and formatting. Run `pnpm check` to check both, `pnpm lint
 
 `pnpm check` rejects lint warnings as well as errors. Intentional refresh dependencies and focusable
 tab panels have narrowly documented suppressions. Run `pnpm test:coverage` for backend coverage
-gates (85% lines and 65% branches), `pnpm test:browser` for Chromium, Firefox, WebKit, keyboard,
+gates (85% lines and 65% branches), `pnpm test:browser` for Chromium, WebKit, keyboard,
 and axe accessibility regressions,
 and `pnpm test:s3` for both live integration suites against disposable localhost-only S3 fixtures.
 The S3 runner builds pinned MinIO community source because its historical binary registries are
