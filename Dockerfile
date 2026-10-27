@@ -10,6 +10,7 @@ COPY tsconfig*.json vite.config.ts ./
 COPY server ./server
 COPY shared ./shared
 COPY web ./web
+COPY resources ./resources
 COPY tests ./tests
 COPY playwright.config.ts ./
 RUN pnpm typecheck && pnpm build

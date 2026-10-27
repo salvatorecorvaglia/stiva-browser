@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="resources/stiva-browser.svg" alt="Stiva Browser logo" width="96" height="96">
+</p>
+
 # Stiva Browser 🖼️
 
 **A shared internal dashboard for AWS S3, MinIO, and other S3-compatible servers**

@@ -1,6 +1,7 @@
-import { Archive, ChevronDown, Menu, Server as ServerIcon, Settings2 } from "lucide-react";
+import { ChevronDown, Menu, Server as ServerIcon, Settings2 } from "lucide-react";
 import type { Dispatch, Ref, SetStateAction } from "react";
 import type { Server } from "../api";
+import projectLogo from "../../../resources/stiva-browser.svg";
 import { ThemePicker } from "./ThemePicker";
 
 export function WorkspaceHeader({
@@ -37,7 +38,7 @@ export function WorkspaceHeader({
       </button>
       <a className="brand" href="/" aria-label="Stiva Browser home">
         <span className="brand-mark">
-          <Archive size={23} />
+          <img src={projectLogo} alt="" width={28} height={28} />
         </span>
         <span>
           stiva<span className="brand-dot">.</span>
