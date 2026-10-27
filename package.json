@@ -22,7 +22,12 @@
     "check:fix": "biome check --write .",
     "test:coverage": "node --experimental-test-coverage --test-coverage-include=server/**/*.ts --test-coverage-lines=85 --test-coverage-branches=65 --import tsx --test tests/*.test.ts",
     "test:s3": "node tests/run-s3.mjs",
-    "test:staging": "node tests/staging.mjs"
+    "test:staging": "node tests/staging.mjs",
+    "desktop:prepare": "pnpm build && node scripts/prepare-desktop.mjs",
+    "desktop:dev": "pnpm desktop:prepare && pnpm --dir desktop start",
+    "desktop:dist": "pnpm desktop:prepare && pnpm --dir desktop run dist",
+    "test:desktop": "node --test tests/desktop.test.mjs",
+    "test:desktop:smoke": "node tests/desktop-smoke.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1156.0",

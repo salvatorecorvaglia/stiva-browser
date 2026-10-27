@@ -190,9 +190,14 @@ jobs:
           retention-days: 1
           if-no-files-found: error
 
+  desktop:
+    name: Desktop installers
+    needs: [preflight, verify]
+    uses: ./.github/workflows/desktop.yml
+
   release:
     name: Publish release
-    needs: [preflight, build]
+    needs: [preflight, build, desktop]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -275,6 +280,13 @@ jobs:
             docker buildx imagetools create --tag "$image" "$amd64" "$arm64"
           done <<< "$IMAGE_TAGS"
 
+      - name: Download desktop installers
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
+        with:
+          pattern: desktop-*
+          path: desktop-installers
+          merge-multiple: true
+
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -283,7 +295,7 @@ jobs:
           PUBLISH_LATEST: ${{ steps.latest.outputs.publish }}
         run: |
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            echo "Release $RELEASE_TAG already exists."
+            gh release upload "$RELEASE_TAG" desktop-installers/* --clobber
             exit 0
           fi
           args=(--verify-tag --title "Stiva Browser $RELEASE_TAG" --notes-file "$RUNNER_TEMP/release-notes.md")
@@ -291,4 +303,4 @@ jobs:
             args+=(--prerelease)
           fi
           args+=(--latest="$PUBLISH_LATEST")
-          gh release create "$RELEASE_TAG" "${args[@]}"
+          gh release create "$RELEASE_TAG" "${args[@]}" desktop-installers/*

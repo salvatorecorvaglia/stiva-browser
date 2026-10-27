@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>Stiva Browser</title>
+  <rect x="64" y="64" width="896" height="896" rx="220" fill="#0d8c76"/>
+  <g fill="none" stroke="#fff" stroke-width="40" stroke-linejoin="round" stroke-linecap="round">
+    <rect x="252" y="292" width="520" height="124" rx="24"/>
+    <path d="M286 416v282q0 34 34 34h384q34 0 34-34V416M446 520h132"/>
+  </g>
+</svg>

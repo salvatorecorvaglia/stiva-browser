@@ -26,3 +26,30 @@ blob-report/
 Thumbs.db
 
 .pnpm-store/
+
+# Desktop packaging
+desktop/runtime/
+desktop/release/
+
+# AI Tools & Agents
+.openai/
+.chatgpt/
+gpt-config.json
+openai.config.json
+.anthropic/
+.claude/
+claude.config.json
+claude-settings.json
+.prompts/
+.prompt-cache/
+.ai/
+.gemini/
+.antigravity/
+.antigravitycli/
+.copilot/
+.codex/
+.cagent/
+.cursor/
+.windsurf/
+.cline/
+CLAUDE.md

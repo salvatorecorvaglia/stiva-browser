@@ -37,6 +37,7 @@ export type ClientFactory = typeof makeS3;
 export function createApp(
   store: Store,
   options: {
+    desktopToken?: string;
     clientFactory?: ClientFactory;
     staticDirectory?: string;
     apiLimit?: number;
@@ -54,6 +55,16 @@ export function createApp(
     while (inFlight.size) await Promise.allSettled([...inFlight]);
   };
   app.disable("x-powered-by");
+  if (options.desktopToken) {
+    const token = options.desktopToken;
+    app.use((req, res, next) => {
+      if (req.get("x-stiva-desktop-token") !== token) {
+        res.status(403).json({ error: { code: "FORBIDDEN", message: "Desktop session required" } });
+        return;
+      }
+      next();
+    });
+  }
   const telemetry = new Telemetry();
   app.use(telemetry.httpMiddleware);
   const trustProxy = options.trustProxy ?? process.env.TRUST_PROXY;

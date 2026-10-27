@@ -9,3 +9,5 @@ playwright-report
 *.log
 
 .pnpm-store
+
+desktop

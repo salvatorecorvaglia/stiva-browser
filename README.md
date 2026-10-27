@@ -4,6 +4,59 @@
 
 **Stiva Browser** is a self-hosted web dashboard for managing files on AWS S3, MinIO, and other S3-compatible storage servers.
 
+## Desktop app (macOS, Windows, Linux)
+
+Stiva Browser also runs as a standalone Electron application. The installers bundle
+both the web interface and a private local backend; Node.js, Docker, and an
+external database are not required on the end user's machine.
+
+| Platform | Architecture            | Packages            |
+| -------- | ----------------------- | ------------------- |
+| macOS    | Apple Silicon and Intel | `.dmg`, `.zip`      |
+| Windows  | x64                     | `.exe` installer    |
+| Linux    | x64                     | `.AppImage`, `.deb` |
+
+Install development dependencies for both runtimes, then start the desktop app:
+
+```sh
+pnpm install --frozen-lockfile
+pnpm --dir desktop install --frozen-lockfile
+pnpm desktop:dev
+```
+
+`pnpm desktop:dist` builds installers for the current OS and architecture into
+`desktop/release/`. The desktop CI workflow builds and smoke-tests each target OS,
+including separate Apple Silicon and Intel runners. The release workflow attaches
+the installers to versioned GitHub releases. Builds are currently unsigned and
+macOS builds are not notarized; distribution signing requires platform certificates.
+Keep root and desktop versions and shared dependency ranges in sync: preparation
+checks both before copying the compiled backend and web assets into the desktop app.
+
+Run `pnpm test:desktop` for navigation policy tests. After `pnpm desktop:prepare`,
+run `pnpm test:desktop:smoke` for a real Electron window, SQLite, authenticated API,
+reload and renderer isolation check. Headless Linux needs
+`xvfb-run -a pnpm test:desktop:smoke`. Set `STIVA_DESKTOP_EXECUTABLE` to test a packaged
+executable instead of the development app.
+
+Desktop stores an independent SQLite workspace under the OS application data
+directory, in `storage/`: `~/Library/Application Support/Stiva Browser` on macOS,
+`%APPDATA%/Stiva Browser` on Windows, and `$XDG_CONFIG_HOME/Stiva Browser`
+(default `~/.config/Stiva Browser`) on Linux. Back up the database and matching
+`master.key` together. Credentials use the existing encrypted storage format;
+the key lives in the same profile, not the OS keychain. Shared web data is not
+imported automatically. `STIVA_DESKTOP_DATA_DIR` overrides the Electron profile
+directory; smoke tests use a temporary profile. `DATA_DIR`, `DB_URI`, and `PORT`
+do not configure the desktop workspace.
+
+The local backend binds an ephemeral port on `127.0.0.1` and requires a fresh
+random session token for every request. Electron injects it only for the private
+origin, without exposing it to renderer JavaScript or sending it to S3 endpoints.
+The renderer is sandboxed with Node.js access disabled. External HTTP(S) links
+open in the system browser after confirmation; other protocols and remote main
+window navigation are blocked. Downloads use Electron's download handling.
+Quit drains requests and storage cleanup before closing SQLite. Closing the last
+window quits on Windows/Linux; macOS keeps the app in the Dock until Quit.
+
 ## Run locally
 
 Requires Node.js 24 or later and pnpm 11.23.0 (`corepack enable` enables the pinned package manager).

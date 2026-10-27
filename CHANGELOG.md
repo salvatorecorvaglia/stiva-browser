@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add a standalone Electron desktop app with local SQLite storage and a private authenticated backend.
+- Build macOS Apple Silicon/Intel, Windows x64, and Linux x64 installers, with desktop smoke tests and release attachments.
+
 ## [1.2.0] - 2026-10-26
 
 ### Added

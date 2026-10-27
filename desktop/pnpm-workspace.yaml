@@ -1,0 +1,8 @@
+# Native modules are rebuilt for Electron after the explicit install step.
+verifyDepsBeforeRun: false
+nodeLinker: hoisted
+allowBuilds:
+  better-sqlite3: true
+  electron: true
+  esbuild: true
+  electron-winstaller: false

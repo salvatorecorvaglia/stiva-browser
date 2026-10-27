@@ -1,0 +1,80 @@
+{
+  "name": "stiva-browser-desktop",
+  "productName": "Stiva Browser",
+  "version": "1.2.0",
+  "description": "Desktop client for AWS S3, MinIO and S3-compatible storage",
+  "author": "Salvatore Corvaglia",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "main": "main.mjs",
+  "scripts": {
+    "start": "electron .",
+    "postinstall": "electron-builder install-app-deps",
+    "pack": "electron-builder --dir --publish never",
+    "dist": "electron-builder --publish never"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1156.0",
+    "@aws-sdk/s3-request-presigner": "^3.1156.0",
+    "better-sqlite3": "^13.0.3",
+    "express": "^5.3.0",
+    "express-rate-limit": "^8.7.1",
+    "helmet": "^8.3.0",
+    "knex": "^3.3.0",
+    "pg": "^8.23.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "electron": "45.0.0",
+    "electron-builder": "26.18.0"
+  },
+  "build": {
+    "appId": "io.github.salvatorecorvaglia.stiva-browser",
+    "productName": "Stiva Browser",
+    "asar": true,
+    "directories": {
+      "output": "release",
+      "buildResources": "assets"
+    },
+    "files": [
+      "main.mjs",
+      "policy.mjs",
+      "runtime/**/*",
+      "package.json",
+      "assets/icon.png"
+    ],
+    "artifactName": "stiva-browser_${version}_${os}_${arch}.${ext}",
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.developer-tools",
+      "hardenedRuntime": true,
+      "icon": "assets/icon.png"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Utility",
+      "maintainer": "Salvatore Corvaglia",
+      "icon": "assets/icon.png",
+      "executableName": "stiva-browser"
+    }
+  },
+  "packageManager": "pnpm@11.23.0"
+}
