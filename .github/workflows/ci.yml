@@ -59,6 +59,8 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test:coverage
       - run: node --test tests/release-latest.test.mjs
+      - run: pnpm test:desktop
+      - run: python3 -m unittest discover -s scripts/tests -v
 
   audit:
     name: Dependency audit

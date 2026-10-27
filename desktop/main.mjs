@@ -4,6 +4,8 @@ import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, dialog, Menu, session, shell } from "electron";
 import { isExternal, isLocal } from "./policy.mjs";
 import { startDesktop } from "./runtime/server/desktop.js";
+import { createUpdateUI } from "./update-ui.mjs";
+import updater from "./updater.cjs";
 
 // An explicit profile override also allows isolated tests of packaged applications.
 if (process.env.STIVA_DESKTOP_DATA_DIR) {
@@ -13,6 +15,28 @@ app.setName("Stiva Browser");
 let backend;
 let window;
 let quitting = false;
+let backendClose;
+function closeBackend() {
+  backendClose ??= backend?.close();
+  return backendClose;
+}
+const updateUI = createUpdateUI({
+  updater,
+  showDialog: (options) =>
+    window ? dialog.showMessageBox(window, options) : dialog.showMessageBox(options),
+  prepareInstall: closeBackend,
+  refreshMenu: (state) => {
+    const item = Menu.getApplicationMenu()?.getMenuItemById("check-updates");
+    if (!item) return;
+    item.enabled = state.canCheck && !["checking", "downloading"].includes(state.status);
+    item.label =
+      state.status === "downloading"
+        ? `Downloading update… ${Math.round(state.percent)}%`
+        : state.status === "ready"
+          ? "Restart to update…"
+          : "Check for updates…";
+  },
+});
 const locked = app.requestSingleInstanceLock();
 if (!locked) app.quit();
 else {
@@ -25,8 +49,7 @@ else {
     if (quitting || !backend) return;
     event.preventDefault();
     quitting = true;
-    void backend
-      .close()
+    void closeBackend()
       .catch(() => {
         dialog.showErrorBox("Stiva Browser", "Could not finish storage cleanup before quitting.");
       })
@@ -77,9 +100,20 @@ else {
             ],
           },
           { role: "windowMenu" },
+          {
+            role: "help",
+            submenu: [
+              {
+                id: "check-updates",
+                label: "Check for updates…",
+                click: () => void updateUI.check(),
+              },
+            ],
+          },
         ]),
       );
       await openWindow();
+      updater.initAutoUpdater({ onState: updateUI.onState });
     })
     .catch(fail);
 }

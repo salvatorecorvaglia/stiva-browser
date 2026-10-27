@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add controlled Compose image updates with health checks, a persistent image journal, and recovery to previous images.
+- Add Kubernetes updates with explicit context, immutable image digests, readiness checks, and automatic rollout recovery.
+
+- Add desktop update checks, download and restart dialogs, verified in-place macOS updates, and release update feeds for macOS, Windows, and Linux AppImage.
 - Add a standalone Electron desktop app with local SQLite storage and a private authenticated backend.
 - Build macOS Apple Silicon/Intel, Windows x64, and Linux x64 installers, with desktop smoke tests and release attachments.
 

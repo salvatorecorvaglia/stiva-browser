@@ -53,3 +53,10 @@ claude-settings.json
 .windsurf/
 .cline/
 CLAUDE.md
+
+# Local deployment update journal
+.update-state/
+
+# Python operations helpers
+__pycache__/
+*.pyc

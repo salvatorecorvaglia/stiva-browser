@@ -1,7 +1,7 @@
 import { ChevronDown, Menu, Server as ServerIcon, Settings2 } from "lucide-react";
 import type { Dispatch, Ref, SetStateAction } from "react";
-import type { Server } from "../api";
 import projectLogo from "../../../resources/stiva-browser.svg";
+import type { Server } from "../api";
 import { ThemePicker } from "./ThemePicker";
 
 export function WorkspaceHeader({

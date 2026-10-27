@@ -12,11 +12,17 @@ try {
   application = await _electron.launch({
     executablePath: process.env.STIVA_DESKTOP_EXECUTABLE || requireDesktop("electron"),
     args: process.env.STIVA_DESKTOP_EXECUTABLE ? [] : [path.resolve("desktop")],
-    env: { ...process.env, STIVA_DESKTOP_DATA_DIR: directory },
+    env: { ...process.env, STIVA_DESKTOP_DATA_DIR: directory, STIVA_DISABLE_UPDATE_CHECK: "1" },
     timeout: 60000,
   });
   const page = await application.firstWindow();
   await page.getByRole("link", { name: "Stiva Browser home" }).waitFor();
+  const updates = await application.evaluate(({ app, Menu }) => {
+    const item = Menu.getApplicationMenu()?.getMenuItemById("check-updates");
+    return { packaged: app.isPackaged, label: item?.label, enabled: item?.enabled };
+  });
+  assert.equal(updates.label, "Check for updates…");
+  assert.equal(updates.enabled, updates.packaged);
   const origin = new URL(page.url()).origin;
   assert.match(origin, /^http:\/\/127\.0\.0\.1:\d+$/);
   const response = await page.evaluate(async () => {
@@ -29,7 +35,9 @@ try {
   assert.equal((await fetch(`${origin}/api/servers`)).status, 403);
   await page.reload();
   await page.getByRole("link", { name: "Stiva Browser home" }).waitFor();
-  console.log("Desktop smoke passed: renderer, SQLite, private API, reload and sandbox.");
+  console.log(
+    "Desktop smoke passed: updater menu, renderer, SQLite, private API, reload and sandbox.",
+  );
 } finally {
   await application?.close();
   await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });

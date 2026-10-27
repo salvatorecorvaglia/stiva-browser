@@ -31,8 +31,8 @@ pnpm desktop:dev
 `pnpm desktop:dist` builds installers for the current OS and architecture into
 `desktop/release/`. The desktop CI workflow builds and smoke-tests each target OS,
 including separate Apple Silicon and Intel runners. The release workflow attaches
-the installers to versioned GitHub releases. Builds are currently unsigned and
-macOS builds are not notarized; distribution signing requires platform certificates.
+the installers to versioned GitHub releases. Windows builds are unsigned; macOS builds use a local ad-hoc signature and are
+not notarized. No Apple or Windows developer certificates are required.
 Keep root and desktop versions and shared dependency ranges in sync: preparation
 checks both before copying the compiled backend and web assets into the desktop app.
 

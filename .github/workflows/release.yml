@@ -287,6 +287,9 @@ jobs:
           path: desktop-installers
           merge-multiple: true
 
+      - name: Generate and verify desktop update feeds
+        run: node scripts/desktop-update-manifests.mjs desktop-installers "$RELEASE_TAG"
+
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}

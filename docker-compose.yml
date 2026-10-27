@@ -1,0 +1,36 @@
+services:
+  stiva-browser:
+    image: ${STIVA_BROWSER_IMAGE:-corvaglia91/stiva-browser:1.2.0}
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 45s
+    ports:
+      - "127.0.0.1:${STIVA_BROWSER_PORT:-3000}:3000"
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      DATA_DIR: /data
+    volumes:
+      - stiva-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/api/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      start_period: 15s
+      retries: 12
+
+volumes:
+  stiva-data:

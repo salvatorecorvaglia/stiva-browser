@@ -26,7 +26,7 @@
     "desktop:prepare": "pnpm build && node scripts/prepare-desktop.mjs",
     "desktop:dev": "pnpm desktop:prepare && pnpm --dir desktop start",
     "desktop:dist": "pnpm desktop:prepare && pnpm --dir desktop run dist",
-    "test:desktop": "node --test tests/desktop.test.mjs",
+    "test:desktop": "node --test tests/desktop*.test.mjs tests/desktop*.test.cjs",
     "test:desktop:smoke": "node tests/desktop-smoke.mjs"
   },
   "dependencies": {
