@@ -1,3 +1,6 @@
+# Match the root project's release-age policy for the shared dependencies.
+minimumReleaseAge: 0
+
 # Native modules are rebuilt for Electron after the explicit install step.
 verifyDepsBeforeRun: false
 nodeLinker: hoisted
