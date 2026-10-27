@@ -27,7 +27,7 @@ jobs:
       - name: Install actionlint
         env:
           GOBIN: ${{ runner.temp }}/bin
-        run: go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+        run: go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
       - name: Validate workflow syntax and expressions
         run: '"$RUNNER_TEMP/bin/actionlint" -color'
 
