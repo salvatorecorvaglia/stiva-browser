@@ -57,12 +57,12 @@ jobs:
 
       - name: Check application and desktop versions agree
         run: |
-          node --input-type=module -e '
+          node --input-type=module <<'NODE'
             import { readFileSync } from "node:fs";
             const app = JSON.parse(readFileSync("package.json", "utf8")).version;
             const desktop = JSON.parse(readFileSync("desktop/package.json", "utf8")).version;
             if (app !== desktop) throw new Error(`Version mismatch: app ${app}, desktop ${desktop}`);
-          '
+          NODE
       - run: pnpm audit --audit-level high
       - run: pnpm check
       - run: pnpm typecheck
@@ -141,6 +141,11 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
+      - name: Install native build tools
+        run: |
+          apt-get update
+          apt-get install --no-install-recommends -y make g++ python3
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -154,23 +159,6 @@ jobs:
           name: browser-test-results
           path: test-results/
           if-no-files-found: ignore
-          retention-days: 7
-
-      - name: Save the verified native image
-        if: startsWith(github.ref, 'refs/tags/v')
-        env:
-          TESTED_IMAGE: stiva-browser:ci
-        run: |
-          mkdir -p "$RUNNER_TEMP/verified-image"
-          docker save "$TESTED_IMAGE" | gzip -1 > "$RUNNER_TEMP/verified-image/image.tar.gz"
-          node scripts/verified-image.mjs record "$RUNNER_TEMP/verified-image" amd64 "$TESTED_IMAGE"
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
-        if: startsWith(github.ref, 'refs/tags/v')
-        with:
-          name: verified-image-amd64
-          path: ${{ runner.temp }}/verified-image/
-          if-no-files-found: error
-          compression-level: 0
           retention-days: 7
 
   container:
@@ -238,6 +226,23 @@ jobs:
           path: test-results/staging-report.json
           if-no-files-found: ignore
           retention-days: 14
+
+      - name: Save the verified native image
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          TESTED_IMAGE: stiva-browser:ci
+        run: |
+          mkdir -p "$RUNNER_TEMP/verified-image"
+          docker save "$TESTED_IMAGE" | gzip -1 > "$RUNNER_TEMP/verified-image/image.tar.gz"
+          node scripts/verified-image.mjs record "$RUNNER_TEMP/verified-image" amd64 "$TESTED_IMAGE"
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          name: verified-image-amd64
+          path: ${{ runner.temp }}/verified-image/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
 
   container-arm64:
     name: ARM64 container build, scan, and smoke
