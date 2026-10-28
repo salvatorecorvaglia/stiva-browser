@@ -84,7 +84,7 @@ jobs:
     uses: ./.github/workflows/ci.yml
 
   build:
-    name: Build and test (${{ matrix.arch }})
+    name: Publish verified image (${{ matrix.arch }})
     needs: [preflight, verify]
     strategy:
       fail-fast: false
@@ -110,48 +110,16 @@ jobs:
         with:
           node-version: 24
 
-      - name: Set up Buildx
-        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069
-
-      - name: Generate image labels
-        id: meta
-        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302
+      - name: Download the exact image exercised by CI
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
         with:
-          images: corvaglia91/stiva-browser
-          tags: type=semver,pattern={{version}}
-
-      - name: Build and load native image
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc
-        with:
-          context: .
-          platforms: linux/${{ matrix.arch }}
-          load: true
-          tags: |
-            corvaglia91/stiva-browser:build-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.arch }}
-            ${{ needs.preflight.outputs.image }}:build-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.arch }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=release-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=release-${{ matrix.arch }}
-
-      - name: Verify the native image is available locally
+          name: verified-image-${{ matrix.arch }}
+          path: ${{ runner.temp }}/verified-image
+      - name: Verify, load and retag the tested image
         env:
-          IMAGE: corvaglia91/stiva-browser:build-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.arch }}
-        run: docker image inspect "$IMAGE" >/dev/null
-
-      - name: Scan native release image
-        uses: anchore/scan-action@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2
-        with:
-          image: corvaglia91/stiva-browser:build-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.arch }}
-          fail-build: true
-          severity-cutoff: high
-          only-fixed: false
-          output-format: table
-
-      - name: Test native release image
-        env:
-          CONTAINER_IMAGE: corvaglia91/stiva-browser:build-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.arch }}
-          CONTAINER_PLATFORM: linux/${{ matrix.arch }}
-        run: node tests/container-smoke.mjs
+          GHCR_IMAGE: ${{ needs.preflight.outputs.image }}
+          BUILD_TAG: build-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.arch }}
+        run: node scripts/verified-image.mjs load "$RUNNER_TEMP/verified-image" "${{ matrix.arch }}"
 
       - name: Log in to Docker Hub
         uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6
@@ -192,12 +160,12 @@ jobs:
 
   desktop:
     name: Desktop installers
-    needs: [preflight, verify]
+    needs: preflight
     uses: ./.github/workflows/desktop.yml
 
   release:
     name: Publish release
-    needs: [preflight, build, desktop]
+    needs: [preflight, verify, build, desktop]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
