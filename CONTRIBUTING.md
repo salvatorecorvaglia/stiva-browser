@@ -72,7 +72,7 @@ CI also runs the following Docker-backed checks. These require a running Docker 
 ```sh
 node tests/run-postgres.mjs
 pnpm test:s3
-docker build --tag stiva-browser:1.2.0 .
+docker build --tag stiva-browser .
 node tests/container-smoke.mjs
 pnpm test:staging
 ```

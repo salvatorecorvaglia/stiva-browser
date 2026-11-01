@@ -1,6 +1,6 @@
 services:
   stiva-browser:
-    image: ${STIVA_BROWSER_IMAGE:-corvaglia91/stiva-browser:1.2.0}
+    image: ${STIVA_BROWSER_IMAGE:-corvaglia91/stiva-browser}
     init: true
     restart: unless-stopped
     stop_grace_period: 45s

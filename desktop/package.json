@@ -1,7 +1,7 @@
 {
   "name": "stiva-browser-desktop",
   "productName": "Stiva Browser",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Desktop client for AWS S3, MinIO and S3-compatible storage",
   "homepage": "https://github.com/salvatorecorvaglia/stiva-browser",
   "author": "Salvatore Corvaglia",
