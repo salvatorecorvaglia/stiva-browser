@@ -1,3 +1,4 @@
+import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
 import { mockStorage, reset } from "./fixtures";
@@ -161,6 +162,7 @@ test("server switching clears bucket context and uses the correct header", async
     (req) => req.url().endsWith("/api/buckets") && req.headers()["x-s3-server-id"] === second.id,
   );
   await page.getByLabel("Select S3 server").selectOption(second.id);
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
   await next;
   await expect(page.getByRole("heading", { name: "Your storage workspace." })).toBeVisible();
   expect(first.id).not.toBe(second.id);
@@ -253,6 +255,8 @@ test("failed direct upload offers an explicit backend retry", async ({ page }) =
   await page.getByRole("button", { name: "Retry through backend" }).click();
   await expect(page.getByText("Upload complete", { exact: true })).toBeVisible();
   expect(proxyRequests).toBe(1);
+  await expect(page.getByRole("button", { name: "Retry through backend" })).toHaveCount(0);
+  await expect(page.locator(".transfer-item")).toHaveCount(1);
 });
 
 test("recursive folder deletion requires a reviewed preview and exact confirmation", async ({
@@ -666,4 +670,138 @@ test("sidebar groups buckets by server and opens a bucket on another server", as
   await expect(page.getByLabel("Select S3 server")).toHaveValue(ids[targetIndex]);
   await expect(page.getByRole("heading", { name: "project-assets." })).toBeVisible();
   await expect(page.getByRole("button", { name: "hello.txt", exact: true })).toBeVisible();
+});
+
+test("multi-file uploads queue behind four active workers", async ({ page }) => {
+  await page.request.post("/api/servers", {
+    data: {
+      name: "Queue",
+      endpoint_url: "http://127.0.0.1:9000",
+      region: "us-east-1",
+      access_key: "fixture",
+      secret_key: "fixture-secret",
+      force_path_style: true,
+    },
+  });
+  await page.goto("/");
+  await page
+    .getByRole("navigation", { name: "Buckets" })
+    .getByRole("button", { name: "project-assets" })
+    .click();
+  await page.route("**/api/buckets/project-assets/objects/metadata?*", (route) =>
+    route.fulfill({ status: 404, json: { error: { message: "Missing" } } }),
+  );
+  let release = () => {};
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let active = 0;
+  let peak = 0;
+  await page.route("**/api/stream/upload?*", async (route) => {
+    active++;
+    peak = Math.max(peak, active);
+    await pending;
+    active--;
+    await route.fulfill({ status: 201, json: {} });
+  });
+  await page.getByLabel("Transfer through backend").check();
+  try {
+    await page.getByLabel("Upload files", { exact: true }).setInputFiles(
+      Array.from({ length: 6 }, (_, index) => ({
+        name: `queue-${index}.txt`,
+        mimeType: "text/plain",
+        buffer: Buffer.from("queued"),
+      })),
+    );
+    await expect.poll(() => active).toBe(4);
+    await expect(page.getByText("Queued", { exact: true })).toHaveCount(2);
+    const canceled = page.locator(".transfer-item").filter({ hasText: "queue-5.txt" });
+    await canceled.getByTitle("Cancel upload").click();
+    await expect(canceled.getByText("Upload canceled", { exact: true })).toBeVisible();
+    release();
+    await expect(page.getByText("Upload complete", { exact: true })).toHaveCount(5);
+    expect(peak).toBe(4);
+  } finally {
+    release();
+  }
+});
+
+test("editing an endpoint disables retries for the previous destination", async ({ page }) => {
+  await page.request.post("/api/servers", {
+    data: {
+      name: "Destination",
+      endpoint_url: "http://127.0.0.1:9000",
+      region: "us-east-1",
+      access_key: "fixture",
+      secret_key: "fixture-secret",
+      force_path_style: true,
+    },
+  });
+  await page.route("**/api/buckets/project-assets/objects/metadata?*", (route) =>
+    route.fulfill({ status: 404, json: {} }),
+  );
+  await page.route("**/api/presigned-url/upload", (route) =>
+    route.fulfill({
+      json: {
+        url: "http://127.0.0.1:4173/failed-direct-upload",
+        required_headers: {},
+        expires_at: "2026-10-30T12:00:00Z",
+      },
+    }),
+  );
+  await page.route("**/failed-direct-upload", (route) => route.abort("failed"));
+  await page.goto("/");
+  await page
+    .getByRole("navigation", { name: "Buckets" })
+    .getByRole("button", { name: "project-assets" })
+    .click();
+  await page.getByLabel("Upload files", { exact: true }).setInputFiles({
+    name: "destination.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("private"),
+  });
+  await expect(page.getByRole("button", { name: "Retry through backend" })).toBeEnabled();
+  await page.getByRole("button", { name: "Manage servers" }).click();
+  await page.getByRole("button", { name: "Destination us-east-1" }).click();
+  await page.getByLabel("Endpoint URL").fill("http://127.0.0.1:9001");
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByRole("dialog")).not.toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Configuration changed; select the file again" }),
+  ).toBeDisabled();
+});
+
+test("partial deletion keeps full failure details available until dismissed", async ({ page }) => {
+  await page.request.post("/api/servers", {
+    data: {
+      name: "Deletion",
+      endpoint_url: "http://127.0.0.1:9000",
+      region: "us-east-1",
+      access_key: "fixture",
+      secret_key: "fixture-secret",
+      force_path_style: true,
+    },
+  });
+  await page.route("**/api/buckets/project-assets/objects", (route) =>
+    route.fulfill({
+      json: {
+        deleted: [],
+        errors: [{ key: "hello.txt", code: "AccessDenied" }],
+      },
+    }),
+  );
+  await page.goto("/");
+  await page
+    .getByRole("navigation", { name: "Buckets" })
+    .getByRole("button", { name: "project-assets" })
+    .click();
+  await page.getByTitle("Delete hello.txt", { exact: true }).click();
+  await page.getByRole("button", { name: "Delete objects", exact: true }).click();
+  const results = page.getByRole("dialog", { name: "Deletion results" });
+  await expect(results).toContainText("hello.txt (AccessDenied)");
+  await expect(results).toContainText("0 deleted; 1 failed or unconfirmed.");
+  const audit = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa"]).analyze();
+  expect(audit.violations).toEqual([]);
+  await page.getByRole("button", { name: "Close results" }).click();
+  await expect(results).not.toBeVisible();
 });

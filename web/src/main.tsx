@@ -35,7 +35,14 @@ import {
   streamUrl,
 } from "./api";
 import "./styles.css";
-import { DeleteModal, FolderModal, InspectModal, LinkModal } from "./components/ObjectModals";
+import { FolderDeleteModal } from "./components/FolderDeleteModal";
+import {
+  DeleteModal,
+  DeletionResultModal,
+  FolderModal,
+  InspectModal,
+  LinkModal,
+} from "./components/ObjectModals";
 import { ObjectRows } from "./components/ObjectRows";
 import { Empty, Loading, Stat } from "./components/Primitives";
 import { ServerManager } from "./components/ServerManager";
@@ -44,39 +51,52 @@ import { WorkspaceHeader } from "./components/WorkspaceHeader";
 import { WorkspaceSidebar } from "./components/WorkspaceSidebar";
 import { useFileDrop } from "./hooks/useFileDrop";
 import { useBuckets, useObjects } from "./hooks/useStorage";
-import { FolderDeleteModal, VersionsModal } from "./ObjectTools";
-import type { WorkspaceModal } from "./types";
+import { useWorkspace } from "./hooks/useWorkspace";
+import { VersionsModal } from "./ObjectTools";
 
 type Notice = { text: string; error?: boolean };
-type Modal = WorkspaceModal;
 
 function App() {
   const [servers, setServers] = useState<Server[]>([]);
   const [serverId, setServerId] = useState("");
-  const [bucket, setBucket] = useState("");
-  const [prefix, setPrefix] = useState("");
-  const [tokens, setTokens] = useState<(string | undefined)[]>([undefined]);
-  const [page, setPage] = useState(0);
-  const [revision, setRevision] = useState(0);
   const [bucketRevision, setBucketRevision] = useState(0);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [manager, setManager] = useState(false);
-  const [sidebar, setSidebar] = useState(false);
-  const [filter, setFilter] = useState("");
   const [bucketFilter, setBucketFilter] = useState("");
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [modal, setModal] = useState<Modal>(null);
   const [proxy, setProxy] = useState(false);
 
+  const server = servers.find((item) => item.id === serverId);
+  const serverContext = `${serverId}:${server?.revision ?? ""}`;
+  const {
+    bucket,
+    prefix,
+    tokens,
+    setTokens,
+    page,
+    setPage,
+    revision,
+    sidebar,
+    setSidebar,
+    filter,
+    setFilter,
+    selected,
+    setSelected,
+    modal,
+    setModal,
+    contextVersion,
+    pendingBucket,
+    mobile,
+    sidebarToggle,
+    navigate,
+    switchServer,
+    closeModal,
+    refresh,
+  } = useWorkspace(serverId, serverContext, setServerId);
   const transferRef = useRef<TransferHandle>(null);
   const dragging = useFileDrop(Boolean(bucket) && !manager && !modal, (files) => {
     void transferRef.current?.startUpload(files);
   });
-  const contextVersion = useRef(0);
-  const pendingBucket = useRef<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
-  const server = servers.find((item) => item.id === serverId);
-  const serverContext = `${serverId}:${server?.revision ?? ""}`;
   const {
     buckets,
     busy: bucketBusy,
@@ -86,14 +106,6 @@ function App() {
   const { listing, busy, error } = useObjects(serverId, bucket, prefix, tokens[page], revision);
   const workspace = useRef({ serverId, bucket, prefix });
   workspace.current = { serverId, bucket, prefix };
-  const [mobile, setMobile] = useState(() => window.matchMedia("(max-width: 680px)").matches);
-  const sidebarToggle = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    const query = window.matchMedia("(max-width: 680px)");
-    const update = () => setMobile(query.matches);
-    query.addEventListener("change", update);
-    return () => query.removeEventListener("change", update);
-  }, []);
   const notify = useCallback((text: string, error = false) => setNotice({ text, error }), []);
 
   const loadServers = useCallback(async (savedId?: string) => {
@@ -111,50 +123,14 @@ function App() {
     void loadServers().catch((err) => notify(err.message, true));
   }, [loadServers, notify]);
   useEffect(() => {
-    if (!notice) return;
-    const timeout = setTimeout(() => setNotice(null), notice.error ? 10000 : 4500);
+    if (!notice || notice.error) return;
+    const timeout = setTimeout(() => setNotice(null), 4500);
     return () => clearTimeout(timeout);
   }, [notice]);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: configuration identity invalidates the workspace.
-  useEffect(() => {
-    contextVersion.current++;
-    setBucket(pendingBucket.current ?? "");
-    pendingBucket.current = null;
-    setPrefix("");
-    setTokens([undefined]);
-    setPage(0);
-    setModal(null);
-  }, [serverContext]);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: page changes and refresh clear the previous selection.
-  useEffect(() => {
-    setSelected(new Set());
-  }, [serverId, bucket, prefix, page, revision]);
-
-  function navigate(nextBucket: string, nextPrefix = "") {
-    contextVersion.current++;
-    setBucket(nextBucket);
-    setPrefix(nextPrefix);
-    setPage(0);
-    setTokens([undefined]);
-    setFilter("");
-    setSelected(new Set());
-    setSidebar(false);
-    if (mobile) sidebarToggle.current?.focus();
-    setModal(null);
-  }
-  function switchServer(id: string) {
-    contextVersion.current++;
-    setServerId(id);
-    navigate("");
-  }
-  function closeModal() {
-    contextVersion.current++;
-    setModal(null);
-  }
-  function refresh() {
-    setPage(0);
-    setTokens([undefined]);
-    setRevision((value) => value + 1);
+  function completeDeletion(deleted: number, errors: string[]) {
+    setModal(errors.length ? { type: "deletion-result", deleted, errors } : null);
+    refresh();
+    if (!errors.length) notify(`${deleted} objects deleted`);
   }
   async function signed(object: S3Object, download = false) {
     const version = contextVersion.current;
@@ -640,16 +616,7 @@ function App() {
           bucket={bucket}
           prefix={modal.prefix}
           onClose={closeModal}
-          onComplete={(deleted, errors) => {
-            setModal(null);
-            refresh();
-            notify(
-              errors.length
-                ? `${deleted} deleted; ${errors.length} failed. ${errors.slice(0, 3).join(", ")}${errors.length > 3 ? "…" : ""}`
-                : `${deleted} objects deleted`,
-              errors.length > 0,
-            );
-          }}
+          onComplete={completeDeletion}
         />
       )}
       {modal?.type === "versions" && (
@@ -686,17 +653,10 @@ function App() {
           onClose={closeModal}
           onDelete={async () => {
             const result = await deleteObjects(serverId, bucket, modal.keys);
-            setModal(null);
-            refresh();
-            if (result.errors.length)
-              notify(
-                `${result.deleted.length} deleted. Failed or unconfirmed: ${result.errors.map((e) => `${e.key} (${e.code})`).join(", ")}`,
-                true,
-              );
-            else
-              notify(
-                `${result.deleted.length} object${result.deleted.length === 1 ? "" : "s"} deleted`,
-              );
+            completeDeletion(
+              result.deleted.length,
+              result.errors.map((item) => `${item.key} (${item.code})`),
+            );
           }}
         />
       )}
@@ -711,6 +671,9 @@ function App() {
           onCopy={() => void signed(modal.object)}
           onVersions={() => setModal({ type: "versions", key: modal.object.key })}
         />
+      )}
+      {modal?.type === "deletion-result" && (
+        <DeletionResultModal deleted={modal.deleted} errors={modal.errors} onClose={closeModal} />
       )}
       {modal?.type === "link" && <LinkModal signed={modal.signed} onClose={closeModal} />}
     </div>

@@ -373,3 +373,40 @@ test("tampered encrypted credentials and invalid master keys refuse startup", as
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("storage operations reject stale revisions before contacting S3", async (t) => {
+  let calls = 0;
+  const { app, saved } = await fixture(t, () => {
+    calls++;
+    return clientFor(() => ({}));
+  });
+  await request(app)
+    .get("/api/buckets")
+    .set("x-s3-server-id", saved.id)
+    .set("x-s3-server-revision", "stale")
+    .expect(412);
+  assert.equal(calls, 0);
+});
+
+test("object listing rejects truncated and repeated provider pagination tokens", async (t) => {
+  for (const output of [
+    { IsTruncated: true },
+    { IsTruncated: true, NextContinuationToken: "repeated" },
+  ]) {
+    const { app, saved } = await fixture(t, () => clientFor(() => output));
+    await request(app)
+      .get("/api/buckets/example/objects?continuationToken=repeated")
+      .set("x-s3-server-id", saved.id)
+      .expect(502);
+  }
+});
+
+test("metadata normalizes missing provider size and content type", async (t) => {
+  const { app, saved } = await fixture(t, () => clientFor(() => ({})));
+  const response = await request(app)
+    .get("/api/buckets/example/objects/metadata?key=unknown")
+    .set("x-s3-server-id", saved.id)
+    .expect(200);
+  assert.equal(response.body.size, null);
+  assert.equal(response.body.content_type, "application/octet-stream");
+});

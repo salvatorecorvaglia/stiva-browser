@@ -1,6 +1,5 @@
 import path from "node:path";
 import {
-  AbortMultipartUploadCommand,
   GetObjectCommand,
   HeadObjectCommand,
   ListBucketsCommand,
@@ -13,10 +12,11 @@ import express, { type NextFunction, type Request, type Response } from "express
 import { rateLimit } from "express-rate-limit";
 import helmet from "helmet";
 import { ZodError, z } from "zod";
-import { keySchema, serverInput } from "../shared/contracts.js";
+import { keySchema, serverInput, versionIdSchema } from "../shared/contracts.js";
 import { deleteKeys } from "./deletion.js";
 import { HttpError } from "./errors.js";
 import { registerObjectTools } from "./object-tools.js";
+import { requestClient } from "./request-client.js";
 import { admission, originGuard, positiveInteger, requestSignal } from "./resources.js";
 import { makeS3 } from "./s3.js";
 import type { Store } from "./store.js";
@@ -25,7 +25,7 @@ import { disposition, registerDownload, registerUpload } from "./transfers.js";
 
 const objectInput = z.object({ bucket: z.string().min(1), key: keySchema });
 const versionedObjectInput = objectInput.extend({
-  versionId: z.string().min(1).max(2048).optional(),
+  versionId: versionIdSchema.optional(),
 });
 const signingInput = versionedObjectInput.extend({
   expiresIn: z.number().int().min(60).max(3600).default(900),
@@ -136,6 +136,9 @@ export function createApp(
     if (!id) throw new HttpError(400, "Select an S3 server");
     const row = await store.row(id);
     if (!row) throw new HttpError(404, "S3 server not found");
+    const expectedRevision = req.get("x-s3-server-revision");
+    if (expectedRevision && expectedRevision !== store.revision(row))
+      throw new HttpError(412, "Server configuration changed. Select the file again.");
     const client = factory(
       { ...row, force_path_style: Boolean(row.force_path_style) },
       store.credentials(row),
@@ -147,23 +150,10 @@ export function createApp(
     const task = (async () => {
       const client = await selected(req);
       const operation = requestSignal(req);
-      const send = client.send.bind(client);
-      // Apply disconnect cancellation to every command, retaining any stricter command deadline.
-      client.send = ((
-        command: Parameters<S3Client["send"]>[0],
-        settings?: { abortSignal?: AbortSignal },
-      ) =>
-        send(command, {
-          ...settings,
-          abortSignal:
-            command instanceof AbortMultipartUploadCommand
-              ? settings?.abortSignal
-              : settings?.abortSignal
-                ? AbortSignal.any([operation.signal, settings.abortSignal])
-                : operation.signal,
-        })) as S3Client["send"];
+      const scoped = requestClient(client, operation.signal);
+      clientScopes.set(scoped, clientScopes.get(client) ?? "");
       try {
-        return await run(client);
+        return await run(scoped);
       } finally {
         operation.dispose();
         client.destroy();
@@ -283,6 +273,10 @@ export function createApp(
         }),
       ),
     );
+    if (result.IsTruncated && !result.NextContinuationToken)
+      throw new HttpError(502, "Storage omitted a required pagination token");
+    if (result.NextContinuationToken && result.NextContinuationToken === query.continuationToken)
+      throw new HttpError(502, "Storage repeated a pagination token");
     res.json({
       objects: (result.Contents ?? [])
         .filter((o) => o.Key !== query.prefix)
@@ -302,13 +296,13 @@ export function createApp(
         new HeadObjectCommand({
           Bucket: parameter(req.params.bucket),
           Key: keySchema.parse(req.query.key),
-          VersionId: z.string().min(1).max(2048).optional().parse(req.query.versionId),
+          VersionId: versionIdSchema.optional().parse(req.query.versionId),
         }),
       ),
     );
     res.json({
-      size: result.ContentLength,
-      content_type: result.ContentType,
+      size: result.ContentLength ?? null,
+      content_type: result.ContentType ?? "application/octet-stream",
       last_modified: result.LastModified,
       etag: result.ETag,
       metadata: result.Metadata ?? {},

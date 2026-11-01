@@ -143,3 +143,32 @@ test("telemetry counts admission outcomes and exposes bounded route labels witho
   assert.doesNotMatch(response.text, /private-object-key|fixture-secret|credential=/);
   assert.match(response.text, /route="unmatched"/);
 });
+
+test("small and multipart restores preserve redirect and encryption settings", async () => {
+  const settings = {
+    WebsiteRedirectLocation: "/replacement",
+    ServerSideEncryption: "aws:kms",
+    SSEKMSKeyId: "fixture-key",
+    BucketKeyEnabled: true,
+  };
+  for (const size of [1024, 6 * 1024 ** 3]) {
+    let checked = false;
+    const client = clientFor(({ name, input }) => {
+      if (name === "HeadObjectCommand") return { ContentLength: size, ...settings };
+      if (name === "CopyObjectCommand" || name === "CreateMultipartUploadCommand") {
+        for (const [key, value] of Object.entries(settings))
+          assert.equal((input as unknown as Record<string, unknown>)[key], value);
+        checked = true;
+        return { UploadId: "fixture" };
+      }
+      if (name === "UploadPartCopyCommand") return { CopyPartResult: { ETag: "fixture" } };
+      return {};
+    });
+    try {
+      await restoreVersion(client, "bucket", "key", "version", new AbortController().signal);
+      assert.equal(checked, true);
+    } finally {
+      client.destroy();
+    }
+  }
+});

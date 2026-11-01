@@ -1,3 +1,4 @@
+const { setTimeout, clearTimeout } = require("node:timers");
 const { execFile, spawn } = require("node:child_process");
 const { createHash } = require("node:crypto");
 const fs = require("node:fs");
@@ -163,6 +164,12 @@ function downloadAsset(url, destPath, expectedSize, onProgress) {
     const hash = createHash("sha512");
     const file = fs.createWriteStream(destPath);
     const limit = expectedSize ?? MAX_UNKNOWN_DOWNLOAD_BYTES;
+    const deadline = setTimeout(
+      () => fail(new Error("Update download timed out.")),
+      15 * 60 * 1000,
+    );
+    const idle = setTimeout(() => fail(new Error("Update download stalled.")), 60000);
+    let responseEnded = false;
     const startedAt = Date.now();
     let received = 0;
     let lastReport = 0;
@@ -171,6 +178,8 @@ function downloadAsset(url, destPath, expectedSize, onProgress) {
     const fail = (err) => {
       if (settled) return;
       settled = true;
+      clearTimeout(deadline);
+      clearTimeout(idle);
       file.destroy();
       request.abort();
       rejectPromise(err instanceof Error ? err : new Error(String(err)));
@@ -192,6 +201,7 @@ function downloadAsset(url, destPath, expectedSize, onProgress) {
 
       response.on("data", (chunk) => {
         if (settled) return;
+        idle.refresh();
         received += chunk.length;
         // The feed states the exact size; anything longer is not the asset the
         // checksum describes, so stop rather than filling the disk.
@@ -213,8 +223,14 @@ function downloadAsset(url, destPath, expectedSize, onProgress) {
       });
 
       response.on("error", fail);
+      response.on("aborted", () => fail(new Error("Update download interrupted.")));
 
+      response.on("close", () => {
+        if (!responseEnded) fail(new Error("Update download closed early."));
+      });
       response.on("end", () => {
+        responseEnded = true;
+        clearTimeout(idle);
         if (settled) return;
         if (expectedSize !== undefined && received !== expectedSize) {
           fail(new Error("The update package download ended early."));
@@ -223,6 +239,7 @@ function downloadAsset(url, destPath, expectedSize, onProgress) {
         file.end(() => {
           if (settled) return;
           settled = true;
+          clearTimeout(deadline);
           resolvePromise(hash.digest("base64"));
         });
       });

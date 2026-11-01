@@ -63,8 +63,6 @@ window quits on Windows/Linux; macOS keeps the app in the Dock until Quit.
 
 ## Run locally
 
-Requires Node.js 24 or later and pnpm 11.23.0 (`corepack enable` enables the pinned package manager).
-
 ```sh
 pnpm install --frozen-lockfile
 pnpm dev
@@ -108,7 +106,7 @@ Cleanup failures explicitly ask operators to inspect incomplete uploads. Shutdow
 
 `GET /api/metrics` exports Prometheus request histograms, admission outcomes, cleanup failures,
 process memory and uptime. Protect it with the same authentication boundary as the API or scrape
-through a restricted internal network. See [monitoring](monitoring/README.md) for alert rules.
+through a restricted internal network. See [monitoring](monitoring/alerts.yml) for alert rules.
 
 Production logs contain route templates, status codes, operation durations, and admission activity;
 they omit keys, endpoint URLs, credentials, request bodies, and presigned URLs.
@@ -231,8 +229,7 @@ volumes, networks, and temporary baseline image tags are removed afterward. It n
 cluster or existing data volume. By default it searches first-parent history starting at HEAD for a
 dirty working tree, or HEAD^ for a clean checkout, building until it finds an image distinct from the
 candidate. Fetch full Git history for this search; set `STIVA_BASELINE_REF` or `STIVA_BASELINE_IMAGE` to test a specific
-previous release. A baseline image must differ from the candidate. See [monitoring](monitoring/README.md)
-and the [incremental implementation and validation record](docs/remediation.md).
+previous release. A baseline image must differ from the candidate.
 
 CI runs on pull requests, pushes to `main`, manual dispatch, and release workflow calls. Workflow
 validation, lint/types/coverage, dependency auditing, integration tests, browser tests, and container

@@ -25,6 +25,10 @@ const updateUI = createUpdateUI({
   showDialog: (options) =>
     window ? dialog.showMessageBox(window, options) : dialog.showMessageBox(options),
   prepareInstall: closeBackend,
+  recoverInstall: async () => {
+    app.relaunch();
+    app.quit();
+  },
   refreshMenu: (state) => {
     const item = Menu.getApplicationMenu()?.getMenuItemById("check-updates");
     if (!item) return;

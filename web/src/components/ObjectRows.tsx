@@ -1,7 +1,6 @@
 import {
   ArrowDownToLine,
   ArrowLeft,
-  ChevronDown,
   ChevronRight,
   Copy,
   Eye,
@@ -69,9 +68,7 @@ export function ObjectRows({
                 }
               />
             </th>
-            <th>
-              Name <ChevronDown size={12} />
-            </th>
+            <th>Name</th>
             <th>Size</th>
             <th>Last modified</th>
             <th className="actions-heading">Actions</th>

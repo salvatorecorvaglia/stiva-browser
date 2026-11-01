@@ -43,7 +43,7 @@ export interface Listing {
   next_token: string | null;
 }
 export interface Metadata {
-  size: number;
+  size: number | null;
   content_type: string;
   last_modified?: string;
   etag?: string;

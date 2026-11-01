@@ -66,3 +66,33 @@ test("restart drains the private backend before invoking the installer", async (
   await setImmediate();
   assert.deepEqual(actions, ["drain", "install"]);
 });
+
+test("installer refusal after drain recovers the workspace", async () => {
+  const actions = [];
+  const ui = createUpdateUI({
+    updater: { installUpdate: async () => false },
+    refreshMenu: () => {},
+    prepareInstall: async () => actions.push("drain"),
+    recoverInstall: async () => actions.push("recover"),
+    showDialog: async () => ({ response: 1 }),
+  });
+  ui.onState({ status: "ready" });
+  await setImmediate();
+  assert.deepEqual(actions, ["drain", "recover"]);
+});
+
+test("failed installation preflight leaves the backend running", async () => {
+  const actions = [];
+  const ui = createUpdateUI({
+    updater: {
+      prepareInstall: async () => false,
+      installUpdate: async () => actions.push("install"),
+    },
+    refreshMenu: () => {},
+    prepareInstall: async () => actions.push("drain"),
+    showDialog: async () => ({ response: 1 }),
+  });
+  ui.onState({ status: "ready" });
+  await setImmediate();
+  assert.deepEqual(actions, []);
+});

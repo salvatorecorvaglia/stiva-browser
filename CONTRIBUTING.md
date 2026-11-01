@@ -4,10 +4,6 @@ Thanks for helping improve Stiva Browser. Bug reports, features, documentation, 
 
 ## Local setup
 
-1. Fork the repository and clone your fork.
-2. Install Node.js 24 or later and pnpm 11.23.0, as pinned in `package.json`.
-3. Create a branch for your change, then install dependencies and start development:
-
 ```sh
 git switch -c fix/describe-your-change
 pnpm install --frozen-lockfile

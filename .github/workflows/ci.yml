@@ -64,6 +64,7 @@ jobs:
             if (app !== desktop) throw new Error(`Version mismatch: app ${app}, desktop ${desktop}`);
           NODE
       - run: pnpm audit --audit-level high
+      - run: node scripts/check-links.mjs
       - run: pnpm check
       - run: pnpm typecheck
       - run: pnpm test:coverage
@@ -118,7 +119,7 @@ jobs:
     name: Browser and accessibility tests
     runs-on: ubuntu-24.04
     container:
-      image: mcr.microsoft.com/playwright:v1.64.1-noble
+      image: mcr.microsoft.com/playwright:v1.64.1-noble@sha256:47b510dd9230bf0b9bfc9b20102241e577ea7a99334ab4c3ca19f19770e9b8ea
       options: --ipc=host
     timeout-minutes: 20
     defaults:
@@ -152,6 +153,8 @@ jobs:
       - name: Check Playwright matches the browser image
         run: test "$(node -p 'require("@playwright/test/package.json").version')" = "1.64.1"
       - run: pnpm test:browser
+        env:
+          STIVA_VISUAL_TESTS: "1"
       - name: Upload browser failure artifacts
         if: failure()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f

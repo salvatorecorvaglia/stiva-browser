@@ -17,6 +17,9 @@ test("macOS rejects corrupt, oversized, incomplete and HTTP-error downloads befo
     ["too long", 2, 200, /larger/],
     ["short", 100, 200, /ended early/],
     ["error", 5, 500, /HTTP 500/],
+    ["aborted", 7, 200, /interrupted/],
+    ["stalled", 7, 200, /timed out|stalled/],
+    ["closed", 6, 200, /closed early/],
   ]) {
     let unpacked = false;
     const module = { exports: {} };
@@ -29,6 +32,10 @@ test("macOS rejects corrupt, oversized, incomplete and HTTP-error downloads befo
         URL,
         Buffer,
         require(name) {
+          if (name === "node:timers" && body === "stalled") {
+            const timers = require(name);
+            return { ...timers, setTimeout: (callback) => timers.setTimeout(callback, 10) };
+          }
           if (name === "node:os") return { ...os, tmpdir: () => directory };
           if (name === "node:child_process")
             return {
@@ -48,9 +55,12 @@ test("macOS rejects corrupt, oversized, incomplete and HTTP-error downloads befo
                   const request = new EventEmitter();
                   request.abort = () => {};
                   request.end = () => {
+                    if (body === "stalled") return;
                     const response = Readable.from([Buffer.from(body)]);
                     response.statusCode = status;
                     request.emit("response", response);
+                    if (body === "aborted") response.emit("aborted");
+                    if (body === "closed") response.emit("close");
                   };
                   return request;
                 },

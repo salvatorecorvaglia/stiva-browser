@@ -4,6 +4,7 @@ export type WorkspaceModal =
   | { type: "folder-delete"; prefix: string }
   | { type: "versions"; key?: string }
   | { type: "delete"; keys: string[] }
+  | { type: "deletion-result"; deleted: number; errors: string[] }
   | { type: "inspect"; object: S3Object; preview: boolean }
   | { type: "link"; signed: Signed }
   | null;

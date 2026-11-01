@@ -133,7 +133,7 @@ function detectPackageManager({
   if (platform === "darwin" && bundlePath) {
     const inApplications =
       bundlePath.startsWith("/Applications/") ||
-      bundlePath.startsWith(posix.join(home, "Applications") + "/");
+      bundlePath.startsWith(`${posix.join(home, "Applications")}/`);
 
     const prefixes = [
       process.env.HOMEBREW_PREFIX && posix.join(process.env.HOMEBREW_PREFIX, "Caskroom"),
@@ -145,7 +145,7 @@ function detectPackageManager({
     const inCaskroom = prefixes.some(
       (prefix) =>
         bundlePath === posix.join(prefix, "stiva-browser") ||
-        bundlePath.startsWith(posix.join(prefix, "stiva-browser") + "/"),
+        bundlePath.startsWith(`${posix.join(prefix, "stiva-browser")}/`),
     );
     if (
       inCaskroom ||
@@ -509,6 +509,16 @@ async function checkForUpdate({ manual = true } = {}) {
   return inFlightCheck;
 }
 
+/** Validate readiness before the UI drains the private backend. */
+async function prepareInstall() {
+  const mode = await refreshMode();
+  return (
+    state.status === "ready" &&
+    mode.mode !== "manual" &&
+    (mode.mode === "self" ? hasStagedUpdate() : squirrelDownloaded)
+  );
+}
+
 /** Downloads the update, or applies one that is already downloaded/staged. */
 async function installUpdate() {
   if (!updater) return false;
@@ -524,8 +534,7 @@ async function installUpdate() {
   }
 
   if (mode.mode === "self") {
-    await installBySelfReplace();
-    return true;
+    return installBySelfReplace();
   }
 
   if (squirrelDownloaded) {
@@ -553,20 +562,20 @@ async function installBySelfReplace() {
         status: "error",
         error: "The update is ready, but Stiva Browser could not start the installer.",
       });
-      return;
+      return false;
     }
     electron().app.quit();
-    return;
+    return true;
   }
 
-  if (selfInstallInFlight) return;
+  if (selfInstallInFlight) return false;
   if (!pendingUpdate) {
     setState({
       status: "error",
       error: "No update is ready. Check for updates again.",
       ...markChecked(),
     });
-    return;
+    return false;
   }
 
   selfInstallInFlight = true;
@@ -605,6 +614,7 @@ async function openReleasePage() {
 }
 
 module.exports = {
+  prepareInstall,
   RELEASES_URL,
   checkForUpdate,
   decideUpdateMode,

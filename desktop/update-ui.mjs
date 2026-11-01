@@ -1,5 +1,11 @@
 // Native dialogs keep update privileges in the main process, outside the web UI.
-export function createUpdateUI({ updater, showDialog, refreshMenu, prepareInstall }) {
+export function createUpdateUI({
+  updater,
+  showDialog,
+  refreshMenu,
+  prepareInstall,
+  recoverInstall = async () => {},
+}) {
   let previousStatus;
   let dialogOpen = false;
   let pending;
@@ -38,8 +44,16 @@ export function createUpdateUI({ updater, showDialog, refreshMenu, prepareInstal
           cancelId: 0,
         });
         if (response === 1) {
+          if (updater.prepareInstall && !(await updater.prepareInstall()))
+            throw new Error("The update is no longer ready to install. Check for updates again.");
           await prepareInstall();
-          await updater.installUpdate();
+          try {
+            if ((await updater.installUpdate()) === false)
+              throw new Error("Installer could not start.");
+          } catch (error) {
+            await recoverInstall();
+            throw error;
+          }
         }
       } else if (state.status === "error") {
         await showDialog({

@@ -14,16 +14,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add desktop update checks, download and restart dialogs, verified in-place macOS updates, and release update feeds for macOS, Windows, and Linux AppImage.
 - Add a standalone Electron desktop app with local SQLite storage and a private authenticated backend.
 - Build macOS Apple Silicon/Intel, Windows x64, and Linux x64 installers, with desktop smoke tests and release attachments.
+- Add light and dark workspace visual checks, browser coverage for upload queues and persistent deletion results, and CI checks for documentation links and desktop dependency vulnerabilities.
 
 ### Changed
 
 - Split CI into independent workflow validation, quality, dependency audit, integration, browser and container checks, with a final required aggregate check.
 - Cache Docker builds and scan CI and native release images for high and critical vulnerabilities before publication.
 - Update AWS SDK, Lucide and Biome dependencies and refresh the project logo.
+- Extract workspace navigation, upload scheduling, and folder deletion into dedicated hooks and components.
+- Cache bucket listings briefly per server configuration, tighten workspace spacing, and consolidate dark theme surface colors.
 
 ### Fixed
 
 - Update the Docker `latest` tag and GitHub latest-release marker only for the highest stable version, preventing older releases from replacing them.
+- Limit uploads to four active workers, confirm replacement of existing objects, and reject stale server configurations before contacting storage.
+- Keep complete partial-deletion failures available in a dialog until dismissed and retain error notifications until dismissed.
+- Reject missing or repeated object pagination tokens and handle missing object size and content type safely in metadata and previews.
+- Keep request cancellation scoped to each S3 request without modifying the underlying client, while allowing multipart cleanup after disconnection.
+- Preserve website redirects and server-side encryption settings when restoring object versions with a single copy.
+- Validate desktop update readiness before stopping the backend, relaunch if the installer fails to start, and stop stalled or interrupted macOS update downloads.
 
 ## [1.2.0] - 2026-10-26
 

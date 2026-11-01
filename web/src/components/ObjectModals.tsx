@@ -272,7 +272,7 @@ export function InspectModal({
           throw new Error(
             "Preview is unavailable for this file type. Download the object to open it.",
           );
-        if (mime.startsWith("image/") && metadata.size > 1048576)
+        if (mime.startsWith("image/") && (metadata.size === null || metadata.size > 1048576))
           throw new Error("This image is too large to preview. Download it to view the full file.");
         if (metadata.size === 0 && !mime.startsWith("image/")) {
           setText("");
@@ -367,7 +367,7 @@ export function InspectModal({
           ) : (
             <>
               <pre className="text-preview">{text}</pre>
-              {metadata && metadata.size > 1048576 && (
+              {metadata && metadata.size !== null && metadata.size > 1048576 && (
                 <p className="muted">Showing the first 1 MB.</p>
               )}
             </>
@@ -376,7 +376,7 @@ export function InspectModal({
           <dl className="metadata">
             {Object.entries({
               Key: object.key,
-              Size: bytes(metadata.size),
+              Size: metadata.size === null ? "Unknown" : bytes(metadata.size),
               "Content type": metadata.content_type,
               Modified: date(metadata.last_modified),
               ETag: metadata.etag,
@@ -406,6 +406,40 @@ export function InspectModal({
           <ArrowDownToLine size={15} />
           Download
         </a>
+      </div>
+    </Dialog>
+  );
+}
+
+export function DeletionResultModal({
+  deleted,
+  errors,
+  onClose,
+}: {
+  deleted: number;
+  errors: string[];
+  onClose: () => void;
+}) {
+  return (
+    <Dialog title="Deletion results" onClose={onClose}>
+      <div className="simple-form">
+        <p>
+          {deleted} deleted; {errors.length} failed or unconfirmed.
+        </p>
+        <p className="muted">
+          Review these results before retrying. An unconfirmed deletion may already have reached
+          storage.
+        </p>
+        <section className="delete-list" aria-label="Failed or unconfirmed deletions">
+          {[...new Set(errors)].map((error) => (
+            <div key={error}>{error}</div>
+          ))}
+        </section>
+        <div className="form-actions">
+          <button className="button secondary" type="button" onClick={onClose}>
+            Close results
+          </button>
+        </div>
       </div>
     </Dialog>
   );

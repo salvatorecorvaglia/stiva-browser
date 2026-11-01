@@ -46,6 +46,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm desktop:prepare
       - run: pnpm test:desktop
+      - run: pnpm --dir desktop audit --audit-level high
       - run: pnpm --dir desktop install --frozen-lockfile
       - name: Smoke test (Linux)
         if: runner.os == 'Linux'
