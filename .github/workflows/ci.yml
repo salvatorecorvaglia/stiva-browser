@@ -153,8 +153,6 @@ jobs:
       - name: Check Playwright matches the browser image
         run: test "$(node -p 'require("@playwright/test/package.json").version')" = "1.64.1"
       - run: pnpm test:browser
-        env:
-          STIVA_VISUAL_TESTS: "1"
       - name: Upload browser failure artifacts
         if: failure()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
