@@ -28,39 +28,6 @@ pnpm --dir desktop install --frozen-lockfile
 pnpm desktop:dev
 ```
 
-`pnpm desktop:dist` builds installers for the current OS and architecture into
-`desktop/release/`. The desktop CI workflow builds and smoke-tests each target OS,
-including separate Apple Silicon and Intel runners. The release workflow attaches
-the installers to versioned GitHub releases. Windows builds are unsigned; macOS builds use a local ad-hoc signature and are
-not notarized. No Apple or Windows developer certificates are required.
-Keep root and desktop versions and shared dependency ranges in sync: preparation
-checks both before copying the compiled backend and web assets into the desktop app.
-
-Run `pnpm test:desktop` for navigation policy tests. After `pnpm desktop:prepare`,
-run `pnpm test:desktop:smoke` for a real Electron window, SQLite, authenticated API,
-reload and renderer isolation check. Headless Linux needs
-`xvfb-run -a pnpm test:desktop:smoke`. Set `STIVA_DESKTOP_EXECUTABLE` to test a packaged
-executable instead of the development app.
-
-Desktop stores an independent SQLite workspace under the OS application data
-directory, in `storage/`: `~/Library/Application Support/Stiva Browser` on macOS,
-`%APPDATA%/Stiva Browser` on Windows, and `$XDG_CONFIG_HOME/Stiva Browser`
-(default `~/.config/Stiva Browser`) on Linux. Back up the database and matching
-`master.key` together. Credentials use the existing encrypted storage format;
-the key lives in the same profile, not the OS keychain. Shared web data is not
-imported automatically. `STIVA_DESKTOP_DATA_DIR` overrides the Electron profile
-directory; smoke tests use a temporary profile. `DATA_DIR`, `DB_URI`, and `PORT`
-do not configure the desktop workspace.
-
-The local backend binds an ephemeral port on `127.0.0.1` and requires a fresh
-random session token for every request. Electron injects it only for the private
-origin, without exposing it to renderer JavaScript or sending it to S3 endpoints.
-The renderer is sandboxed with Node.js access disabled. External HTTP(S) links
-open in the system browser after confirmation; other protocols and remote main
-window navigation are blocked. Downloads use Electron's download handling.
-Quit drains requests and storage cleanup before closing SQLite. Closing the last
-window quits on Windows/Linux; macOS keeps the app in the Dock until Quit.
-
 ## Run locally
 
 ```sh
@@ -111,42 +78,6 @@ through a restricted internal network. See [monitoring](monitoring/alerts.yml) f
 Production logs contain route templates, status codes, operation durations, and admission activity;
 they omit keys, endpoint URLs, credentials, request bodies, and presigned URLs.
 
-## Files and transfers
-
-- Browse buckets and folders, paginate objects, create folder markers, inspect metadata, preview text/raster images, download, copy expiring links, and delete selected objects.
-- Browser uploads use presigned PUT URLs by default. The endpoint must be reachable by the browser, use a compatible HTTP/HTTPS scheme, and allow your dashboard origin through its bucket CORS policy.
-- Select **Transfer through backend** for private endpoints or buckets without CORS. Failed uploads offer an explicit backend retry. Retrying an upload can overwrite the same key, so the UI checks for existing objects and asks before replacement. This check is advisory and does not prevent concurrent writers.
-- Download buttons use the backend stream. **Copy presigned URL** provides direct S3 downloads; signed URLs grant temporary bearer access and expire after 15 minutes by default.
-- Proxy uploads stream with bounded memory and multipart cleanup. Direct PUT uploads are limited by your provider's single-PUT limits; use proxy mode for large objects. Configure ingress upload limits and timeouts for your expected files.
-- Text previews show at most 1 MiB. Raster image previews are limited to 1 MiB. HTML and SVG are never rendered inline. Preview is intentionally unavailable for other formats.
-- Search filters the current page. Counters and sizes describe that page, not the entire bucket.
-- Deletion uses normal S3 semantics, including delete markers for versioned buckets. Folder rows offer recursive deletion with an object-count/size preview and exact typed prefix confirmation. A preview covers at most 10,000 current objects, expires after five minutes, is bound to the selected server configuration, and can be submitted once. Only keys captured in that preview are deleted; keys added afterward are excluded. Existing keys overwritten after preview are still addressed by their key, so avoid concurrent writers during deletion. Partial failures are reported, and historical versions are retained. Split larger folders into smaller subfolders.
-- **Versions** lists historical data and delete markers for the current location, including objects hidden from the normal listing. Search by exact object key, load more history, download old versions, restore an old version as a new current version, or permanently delete a specific version/marker. Restore and permanent deletion require typing the complete key. Deleting the current delete marker can make older contents visible again. Version permissions and S3 Object Lock rules still apply. Restore uses server-side copy, including bounded multipart copy for objects larger than 5 GiB; multipart restore preserves metadata and tags and cleans up failed copies.
-- Static long-lived S3 credentials are supported.
-
-Example development-only bucket CORS policy (replace the origin in production):
-
-```json
-{
-  "CORSRules": [
-    {
-      "AllowedOrigins": ["http://localhost:5173"],
-      "AllowedMethods": ["PUT", "GET", "HEAD"],
-      "AllowedHeaders": ["*"],
-      "ExposeHeaders": ["ETag"]
-    }
-  ]
-}
-```
-
-## Credential encryption and backups
-
-Both credential fields use AES-256-GCM with a unique nonce and authenticated, versioned ciphertext. A 32-byte `master.key` is created atomically on first startup with mode `0600`. It is persisted beside `stiva.sqlite`, not stored in the database, image, environment, or repository. Startup fails when credentials exist but the key is missing, invalid, or does not decrypt them.
-
-Back up the **database and matching key together**. The local key protects credentials in a database-only leak; access to the complete data volume permits decryption. Protect volume backups accordingly. There is no automatic key rotation in this release.
-
-For a consistent offline backup, stop the process/container, copy the entire data directory (including any SQLite WAL/SHM files), and restart it. Restore that directory to the persistent volume with ownership readable/writable by UID/GID 1000 and mode `0600` on `master.key`. Do not copy a running SQLite database without SQLite's backup tooling. Do not generate a replacement key for existing records.
-
 ## Docker
 
 ```sh
@@ -166,83 +97,6 @@ kubectl apply -f k8s/
 ```
 
 The manifests use a 2 GiB ReadWriteOnce PVC, a single replica, `Recreate` upgrades, ClusterIP port 3000, and a standard Ingress using the Traefik ingress class. Choose your cluster's ingress class and storage class as needed. SQLite requires local-filesystem-compatible locking; do not use unsuitable network filesystems or scale replicas against one SQLite volume. There is no S3 credential Secret manifest. `/api/health/live` reports process health; `/api/health/ready` checks database access.
-
-## REST API
-
-JSON errors have `{ "error": { "code": "…", "message": "…" } }`. Server responses omit secrets and mask access keys. They include an opaque `revision`. To reject stale edits, send `If-Match: "<revision>"` on server updates; a changed configuration returns 412 and a deleted configuration returns 404. The UI uses conditional updates. Clients omitting the header retain compatibility, and omitted credentials are retained from the current row transactionally. Supply actual credentials only on creation/replacement; omit either field during updates to retain it.
-
-| Method | Route                                   | Input / behavior                                                                                                                   |
-| ------ | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| GET    | `/api/servers`                          | Sanitized registered configurations                                                                                                |
-| POST   | `/api/servers`                          | `name`, `endpoint_url`, `region`, `access_key`, `secret_key`, `force_path_style`                                                   |
-| PUT    | `/api/servers/:id`                      | Same configuration; omitted credential fields are retained                                                                         |
-| DELETE | `/api/servers/:id`                      | Removes configuration only                                                                                                         |
-| POST   | `/api/servers/test`                     | Draft configuration; optional `id` reuses stored credentials; never saves                                                          |
-| GET    | `/api/buckets`                          | Lists buckets                                                                                                                      |
-| GET    | `/api/buckets/:bucket/objects`          | `prefix`, `delimiter=/`, optional `continuationToken`; returns `objects`, `prefixes`, `next_token`                                 |
-| GET    | `/api/buckets/:bucket/objects/metadata` | Query `key`                                                                                                                        |
-| POST   | `/api/buckets/:bucket/folders`          | `{ "key": "folder/" }`                                                                                                             |
-| DELETE | `/api/buckets/:bucket/objects`          | `{ "keys": ["key"] }`; up to 10,000 keys within a 64 KiB JSON body, S3 chunks of 1,000; returns deleted keys and individual errors |
-| POST   | `/api/presigned-url/download`           | `bucket`, `key`, optional `expiresIn` (60–3600 seconds; default 900)                                                               |
-| POST   | `/api/presigned-url/upload`             | Same, plus optional `contentType`; returns `url`, `expires_at`, `required_headers`                                                 |
-| GET    | `/api/stream/download`                  | Query `bucket`, `key`; optional `preview=true` for bounded safe previews                                                           |
-| PUT    | `/api/stream/upload`                    | Query `bucket`, `key`; raw file body and its Content-Type                                                                          |
-
-Additional object-management routes:
-
-| Method | Route                                         | Input / behavior                                                                                                              |
-| ------ | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| GET    | `/api/buckets/:bucket/folders/delete-preview` | Query `prefix` ending in `/`; returns count, size, sample, `preview_token`, and expiration                                    |
-| DELETE | `/api/buckets/:bucket/folders`                | JSON `prefix`, `confirmation` matching the complete prefix, and `preview_token`; returns deleted keys and individual failures |
-| GET    | `/api/buckets/:bucket/versions`               | Query `prefix` or exact `key`; optional `keyMarker` and `versionIdMarker`; returns versions, delete markers, and next markers |
-| DELETE | `/api/buckets/:bucket/versions`               | JSON `key`, `versionId`, `confirmation` matching the complete key; permanently deletes that version or marker                 |
-| POST   | `/api/buckets/:bucket/versions/restore`       | Same JSON; copies that historical version into a new current version                                                          |
-
-Metadata, backend download/preview, and presigned download routes also accept an optional `versionId`. Uploads always create a new current version and reject `versionId` in presigning requests. Historical versions cannot be overwritten in place.
-
-All bucket/object/transfer routes require `x-s3-server-id: <id>` or `?serverId=<id>`. Conflicting identifiers are rejected. URL-encode bucket names and keys. HTTP(S) endpoints may include a base path but cannot embed credentials, query strings, or fragments.
-
-Biome handles linting and formatting. Run `pnpm check` to check both, `pnpm lint` for linting only, `pnpm format:check` to verify formatting, or `pnpm format` to format files. `pnpm check:fix` applies safe lint, import, and formatting fixes.
-
-`pnpm check` rejects lint warnings as well as errors. Intentional refresh dependencies and focusable
-tab panels have narrowly documented suppressions. Run `pnpm test:coverage` for backend coverage
-gates (85% lines and 65% branches), `pnpm test:browser` for Chromium, WebKit, keyboard,
-and axe accessibility regressions,
-and `pnpm test:s3` for both live integration suites against disposable localhost-only S3 fixtures.
-The S3 runner builds pinned MinIO community source because its historical binary registries are
-unavailable; the first build needs network access and Docker. Set `STIVA_TEST_S3_IMAGE` to use an
-existing compatible fixture image instead. Fixtures are removed after the run.
-
-Before promotion, use disposable buckets, run PostgreSQL/S3/browser/container checks, and back up
-the database with its matching master key. Retain the previous application image for rollback.
-Monitor storage failures, cleanup failures, active work, latency, 429 responses, and container memory.
-The database schema and credential encryption format remain compatible with existing installations.
-
-Run `pnpm test:staging` after building the application image as `stiva-browser:ci` (or setting
-`CONTAINER_IMAGE`) and the S3 fixture image. The container smoke test uses the same image setting.
-It provisions an isolated
-local Docker environment with HTTPS, an authentication proxy, Prometheus, disposable S3 storage,
-SQLite and PostgreSQL. It verifies four concurrent uploads under a 512 MiB memory limit, excess-work
-rejection, read latency, SHA-256 integrity, cleanup alerting, redacted logs, image rollback, and backup
-restoration. Measurements are written to `test-results/staging-report.json`; all owned containers,
-volumes, networks, and temporary baseline image tags are removed afterward. It never uses a live
-cluster or existing data volume. By default it searches first-parent history starting at HEAD for a
-dirty working tree, or HEAD^ for a clean checkout, building until it finds an image distinct from the
-candidate. Fetch full Git history for this search; set `STIVA_BASELINE_REF` or `STIVA_BASELINE_IMAGE` to test a specific
-previous release. A baseline image must differ from the candidate.
-
-CI runs on pull requests, pushes to `main`, manual dispatch, and release workflow calls. Workflow
-validation, lint/types/coverage, dependency auditing, integration tests, browser tests, and container
-staging run independently. The final `Lint, test, and build` check requires every job to succeed and
-keeps the existing branch-protection check name. Dependency audits include development packages;
-image scans cover OS and application packages. High or critical vulnerabilities block CI and release
-image publication, including vulnerabilities without a fix.
-
-Release publication is serialized across versions. Only the highest stable SemVer Git tag may
-update Docker Hub and GHCR `latest`; older releases and prereleases still publish versioned tags.
-A newer stable tag prevents an older release from updating `latest` even if the newer release has
-not finished. GitHub's tag lookup must succeed before publication. Run
-`node --test tests/release-latest.test.mjs` to verify version ordering and rerun behavior.
 
 ---
 
