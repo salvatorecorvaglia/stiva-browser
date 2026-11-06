@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Update application and desktop dependencies, including AWS SDK, Lucide, Electron, Vite, and Biome.
+- Pin Playwright to version 1.65.0 and align the CI and local browser test images with that version.
+
 ### Fixed
 
 - Delete empty folders with a single-object request and add a signed Content-MD5 checksum to bulk deletions for compatibility with S3 providers that require it.
