@@ -91,6 +91,7 @@ Mention skipped or unavailable checks in your pull request.
 ## Pull requests
 
 Open a pull request against `main` and complete the repository's pull request template. Include:
+
 - The problem and the resulting behavior, with a related issue link when available.
 - Tests and manual checks performed, including any limitations.
 - Screenshots for visible interface changes.
