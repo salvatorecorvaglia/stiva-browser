@@ -151,7 +151,7 @@ export function registerObjectTools(
       if (snapshots.get(input.preview_token) !== snapshot)
         throw new HttpError(409, "Deletion preview was already submitted. Preview again.");
       snapshots.delete(input.preview_token);
-      return deleteKeys(client, snapshot.bucket, snapshot.keys, undefined, true);
+      return deleteKeys(client, snapshot.bucket, snapshot.keys);
     });
     res.json(result);
   });

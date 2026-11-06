@@ -377,11 +377,11 @@ test("large restore copies bounded ranges and aborts failed multipart copies", a
 });
 
 test("deletion previews cannot be submitted concurrently or after expiration", async (t) => {
-  const { app, id, calls } = await fixture(t, async ({ name, input }) => {
+  const { app, id, calls } = await fixture(t, async ({ name }) => {
     if (name === "ListObjectsV2Command") return { Contents: [{ Key: "folder/a.txt", Size: 1 }] };
-    if (name === "DeleteObjectsCommand") {
+    if (name === "DeleteObjectCommand") {
       await new Promise((resolve) => setTimeout(resolve, 10));
-      return { Deleted: required(input.Delete?.Objects) };
+      return {};
     }
     throw new Error(name);
   });
@@ -402,7 +402,7 @@ test("deletion previews cannot be submitted concurrently or after expiration", a
     request(app).delete("/api/buckets/data/folders").set("x-s3-server-id", id).send(body),
   ]);
   assert.deepEqual(results.map((result) => result.status).sort(), [200, 409]);
-  assert.equal(calls.filter((call) => call.name === "DeleteObjectsCommand").length, 1);
+  assert.equal(calls.filter((call) => call.name === "DeleteObjectCommand").length, 1);
   const second = (
     await request(app)
       .get("/api/buckets/data/folders/delete-preview")
@@ -417,5 +417,49 @@ test("deletion previews cannot be submitted concurrently or after expiration", a
     .set("x-s3-server-id", id)
     .send({ ...body, preview_token: second.preview_token })
     .expect(409);
-  assert.equal(calls.filter((call) => call.name === "DeleteObjectsCommand").length, 1);
+  assert.equal(calls.filter((call) => call.name === "DeleteObjectCommand").length, 1);
+});
+
+test("an empty folder is deleted with a single-object request", async (t) => {
+  const { app, id } = await fixture(t, ({ name, input }) => {
+    if (name === "ListObjectsV2Command") return { Contents: [{ Key: "test/", Size: 0 }] };
+    assert.equal(name, "DeleteObjectCommand");
+    if (name === "DeleteObjectCommand") assert.equal(input.Key, "test/");
+    return {};
+  });
+  const preview = await request(app)
+    .get("/api/buckets/data/folders/delete-preview")
+    .query({ prefix: "test/" })
+    .set("x-s3-server-id", id)
+    .expect(200);
+  const result = await request(app)
+    .delete("/api/buckets/data/folders")
+    .set("x-s3-server-id", id)
+    .send({ prefix: "test/", confirmation: "test/", preview_token: preview.body.preview_token })
+    .expect(200);
+  assert.deepEqual(result.body, { deleted: ["test/"], errors: [] });
+});
+
+test("folder listings exclude deleted-only prefixes and retain empty markers and nested objects", async (t) => {
+  const { app, id, calls } = await fixture(t, ({ name, input }) => {
+    assert.equal(name, "ListObjectsV2Command");
+    if (name !== "ListObjectsV2Command") throw new Error(name);
+    if (input.Delimiter)
+      return {
+        CommonPrefixes: [{ Prefix: "deleted/" }, { Prefix: "empty/" }, { Prefix: "nested/" }],
+        IsTruncated: true,
+        NextContinuationToken: "next-page",
+      };
+    assert.equal(input.MaxKeys, 1);
+    if (input.Prefix === "empty/") return { Contents: [{ Key: "empty/", Size: 0 }] };
+    if (input.Prefix === "nested/") return { Contents: [{ Key: "nested/sub/file.txt" }] };
+    return {};
+  });
+  const response = await request(app)
+    .get("/api/buckets/data/objects")
+    .set("x-s3-server-id", id)
+    .expect(200);
+  assert.deepEqual(response.body.prefixes, ["empty/", "nested/"]);
+  assert.equal(response.body.next_token, "next-page");
+  assert.equal(calls.length, 4);
 });

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Delete empty folders with a single-object request and add a signed Content-MD5 checksum to bulk deletions for compatibility with S3 providers that require it.
+- Preserve storage service error codes in deletion results instead of reporting every failure as `UnconfirmedDeletion`.
+- Exclude folder prefixes containing only deleted versions from listings while retaining empty folder markers and folders with current nested objects.
+
 ## [1.3.0] - 2026-11-01
 
 ### Added

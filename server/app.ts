@@ -262,8 +262,8 @@ export function createApp(
         continuationToken: z.string().optional(),
       })
       .parse(req.query);
-    const result = await using(req, (client) =>
-      client.send(
+    const result = await using(req, async (client) => {
+      const result = await client.send(
         new ListObjectsV2Command({
           Bucket: parameter(req.params.bucket),
           Prefix: query.prefix,
@@ -271,8 +271,38 @@ export function createApp(
           ContinuationToken: query.continuationToken,
           MaxKeys: 200,
         }),
-      ),
-    );
+      );
+      // Some versioned providers return CommonPrefixes containing only deleted versions.
+      // Check current objects without a delimiter, retaining empty folder marker objects.
+      const prefixes = [
+        ...new Set((result.CommonPrefixes ?? []).flatMap((p) => (p.Prefix ? [p.Prefix] : []))),
+      ];
+      const visible = new Set<string>();
+      let index = 0;
+      const signal = AbortSignal.timeout(60000);
+      await Promise.all(
+        Array.from({ length: Math.min(8, prefixes.length) }, async () => {
+          while (index < prefixes.length) {
+            const prefix = prefixes[index++];
+            const contents = await client.send(
+              new ListObjectsV2Command({
+                Bucket: parameter(req.params.bucket),
+                Prefix: prefix,
+                MaxKeys: 1,
+              }),
+              { abortSignal: signal },
+            );
+            if (contents.Contents?.length) visible.add(prefix);
+          }
+        }),
+      );
+      return {
+        ...result,
+        CommonPrefixes: prefixes
+          .filter((prefix) => visible.has(prefix))
+          .map((Prefix) => ({ Prefix })),
+      };
+    });
     if (result.IsTruncated && !result.NextContinuationToken)
       throw new HttpError(502, "Storage omitted a required pagination token");
     if (result.NextContinuationToken && result.NextContinuationToken === query.continuationToken)
