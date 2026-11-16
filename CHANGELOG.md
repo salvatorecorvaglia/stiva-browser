@@ -9,8 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Update application and desktop dependencies, including AWS SDK, Lucide, Electron, Vite, and Biome.
-- Pin Playwright to version 1.65.0 and align the CI and local browser test images with that version.
+- Update application and desktop dependencies, including AWS SDK `3.1169.0`, better-sqlite3 `13.2.0`, Electron `45.3.3`, express-rate-limit `8.7.4`, and Lucide `1.73.0`.
+- Upgrade TypeScript to `7.0.2` and refresh frontend tooling, including Vite `8.3.8`, Tailwind CSS `4.3.5`, and Biome `2.6.8`, along with application and desktop lockfiles.
+- Update the pinned Playwright dependency to `1.65.1`; CI and local browser test images were aligned at `1.65.0`.
 
 ### Fixed
 
