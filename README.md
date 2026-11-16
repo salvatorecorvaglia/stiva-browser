@@ -2,23 +2,13 @@
   <img src="resources/stiva-browser.svg" alt="Stiva Browser logo" width="96" height="96">
 </p>
 
-# Stiva Browser 🖼️
+# Stiva Browser
 
 **A shared internal dashboard for AWS S3, MinIO, and other S3-compatible servers**
 
 **Stiva Browser** is a self-hosted web dashboard for managing files on AWS S3, MinIO, and other S3-compatible storage servers.
 
-## Desktop app (macOS, Windows, Linux)
-
-Stiva Browser also runs as a standalone Electron application. The installers bundle
-both the web interface and a private local backend; Node.js, Docker, and an
-external database are not required on the end user's machine.
-
-| Platform | Architecture            | Packages            |
-| -------- | ----------------------- | ------------------- |
-| macOS    | Apple Silicon and Intel | `.dmg`, `.zip`      |
-| Windows  | x64                     | `.exe` installer    |
-| Linux    | x64                     | `.AppImage`, `.deb` |
+## Desktop app
 
 Install development dependencies for both runtimes, then start the desktop app:
 
