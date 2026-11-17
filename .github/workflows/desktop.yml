@@ -55,9 +55,30 @@ jobs:
         if: runner.os != 'Linux'
         run: pnpm test:desktop:smoke
       - name: Build installers
+        if: runner.os != 'macOS'
         run: pnpm --dir desktop run dist
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      - name: Build macOS installers
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: |
+          set -o pipefail
+          for attempt in 1 2 3; do
+            build_log=$(mktemp)
+            if pnpm --dir desktop run dist 2>&1 | tee "$build_log"; then
+              exit 0
+            fi
+            # dmgbuild can race with macOS processes holding the mounted image.
+            # Retry only this transient detach failure; preserve all other errors.
+            if [[ "$attempt" == 3 ]] || ! grep -Eq 'Unable to detach device cleanly: hdiutil:.*Resource busy' "$build_log"; then
+              exit 1
+            fi
+            echo "::warning::DMG volume was busy; retrying installer build (attempt $((attempt + 1))/3)"
+            sleep 10
+          done
       - name: Smoke test packaged app (Linux)
         if: runner.os == 'Linux'
         run: xvfb-run -a pnpm test:desktop:smoke

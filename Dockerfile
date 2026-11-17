@@ -19,6 +19,8 @@ RUN pnpm prune --prod
 FROM node:24-alpine AS runtime
 ENV NODE_ENV=production PORT=3000 DATA_DIR=/data
 WORKDIR /app
+# Refresh inherited OS packages and require the patched zlib release.
+RUN apk upgrade --no-cache && apk add --no-cache "zlib>=1.4-r0"
 # The server runs directly with Node; exclude bundled package managers and their
 # dependency trees from the shipped image. Build-stage tooling stays available.
 RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
