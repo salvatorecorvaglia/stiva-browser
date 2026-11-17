@@ -71,8 +71,6 @@ jobs:
             if pnpm --dir desktop run dist 2>&1 | tee "$build_log"; then
               exit 0
             fi
-            # dmgbuild can race with macOS processes holding the mounted image.
-            # Retry only this transient detach failure; preserve all other errors.
             if [[ "$attempt" == 3 ]] || ! grep -Eq 'Unable to detach device cleanly: hdiutil:.*Resource busy' "$build_log"; then
               exit 1
             fi
