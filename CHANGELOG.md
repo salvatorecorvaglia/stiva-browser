@@ -9,21 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add stable-release Homebrew cask generation with SHA-256 checksums, CI validation, release attachments, and optional publication to the personal tap; document installation and release maintenance.
 - Add declarative S3 server configuration through `SERVERS_CONFIG_FILE`, with credentials loaded from separate files for Kubernetes ConfigMap/Secret mounts or Docker volumes.
 - Keep managed servers read-only in the UI and API alongside user-created connections; apply configuration changes, credential rotation, and connection removal on restart without modifying S3 objects.
 - Add Kubernetes configuration examples and reject invalid managed configuration at startup with redacted errors.
 
 ### Changed
 
-- Update application and desktop dependencies, including AWS SDK `3.1169.0`, better-sqlite3 `13.2.0`, Electron `45.3.3`, express-rate-limit `8.7.4`, and Lucide `1.73.0`.
+- Update application and desktop dependencies, including AWS SDK `3.1170.0`, better-sqlite3 `13.2.0`, Electron `45.3.3`, express-rate-limit `8.7.4`, and Lucide `1.74.0`.
 - Upgrade TypeScript to `7.0.2` and refresh frontend tooling, including Vite `8.3.8`, Tailwind CSS `4.3.5`, and Biome `2.6.8`, along with application and desktop lockfiles.
-- Update the pinned Playwright dependency to `1.65.1`; CI and local browser test images were aligned at `1.65.0`.
+- Align the pinned Playwright dependency, CI browser image, and local browser test image at `1.65.1`.
 
 ### Fixed
 
+- Retry macOS installer builds up to three times only when DMG detachment fails because the device is busy.
 - Delete empty folders with a single-object request and add a signed Content-MD5 checksum to bulk deletions for compatibility with S3 providers that require it.
 - Preserve storage service error codes in deletion results instead of reporting every failure as `UnconfirmedDeletion`.
 - Exclude folder prefixes containing only deleted versions from listings while retaining empty folder markers and folders with current nested objects.
+
+### Security
+
+- Upgrade inherited Alpine runtime packages and require zlib `1.4-r0` or newer in the container image.
 
 ## [1.3.0] - 2026-11-01
 

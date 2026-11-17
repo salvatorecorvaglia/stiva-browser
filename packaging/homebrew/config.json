@@ -1,0 +1,9 @@
+{
+  "name": "stiva-browser",
+  "kind": "cask",
+  "description": "Desktop client for S3-compatible storage",
+  "title": "Stiva Browser",
+  "pattern": "stiva-browser_{version}_mac_{arch}.dmg",
+  "arm": "arm64",
+  "intel": "x64"
+}

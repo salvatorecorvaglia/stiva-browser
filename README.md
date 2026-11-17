@@ -8,6 +8,16 @@
 
 **Stiva Browser** is a self-hosted web dashboard for managing files on AWS S3, MinIO, and other S3-compatible storage servers.
 
+---
+
+## Homebrew
+
+Stable releases are distributed through the personal tap:
+
+```sh
+brew install --cask salvatorecorvaglia/tap/stiva-browser
+```
+
 ## Desktop app
 
 Install development dependencies for both runtimes, then start the desktop app:
