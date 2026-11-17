@@ -22,6 +22,29 @@ export interface ServerRow {
 }
 
 export class Store {
+  private managed = new Map<string, ServerRow>();
+
+  setManaged(inputs: (ServerInput & { id: string })[]) {
+    const rows = new Map<string, ServerRow>();
+    for (const input of inputs) {
+      if (!input.access_key || !input.secret_key) throw new Error("Managed credentials required");
+      const id = `managed:${input.id}`;
+      if (rows.has(id)) throw new Error("Duplicate managed server ID");
+      rows.set(id, {
+        ...input,
+        id,
+        access_key: this.cipher.encrypt(input.access_key),
+        secret_key: this.cipher.encrypt(input.secret_key),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+    }
+    this.managed = rows;
+  }
+
+  assertMutable(id: string) {
+    if (id.startsWith("managed:")) throw new HttpError(403, "Server is managed by configuration");
+  }
   private constructor(
     public db: Knex,
     private cipher: CredentialCipher,
@@ -117,18 +140,20 @@ export class Store {
     return {
       ...rest,
       revision: this.revision(row),
+      managed: this.managed.has(row.id),
       force_path_style: Boolean(row.force_path_style),
       access_key: "••••••••",
       has_secret_key: true,
     };
   }
   async list() {
-    return (await this.db<ServerRow>("s3_servers").orderBy("created_at")).map((row) =>
-      this.publicRow(row),
-    );
+    return [
+      ...this.managed.values(),
+      ...(await this.db<ServerRow>("s3_servers").orderBy("created_at")),
+    ].map((row) => this.publicRow(row));
   }
   async row(id: string) {
-    return this.db<ServerRow>("s3_servers").where({ id }).first();
+    return this.managed.get(id) ?? this.db<ServerRow>("s3_servers").where({ id }).first();
   }
   credentials(row: ServerRow) {
     return {
@@ -137,6 +162,7 @@ export class Store {
     };
   }
   async save(input: ServerInput, existing?: ServerRow, expectedRevision?: string) {
+    if (existing) this.assertMutable(existing.id);
     return this.db.transaction(async (trx) => {
       let current: ServerRow | undefined;
       if (existing) {

@@ -228,6 +228,7 @@ export function createApp(
     res.json(await store.save(input, existing, req.get("if-match")));
   });
   app.delete("/api/servers/:id", async (req, res) => {
+    store.assertMutable(parameter(req.params.id));
     const deleted = await store.db("s3_servers").where({ id: req.params.id }).delete();
     if (!deleted) throw new HttpError(404, "S3 server not found");
     res.status(204).end();

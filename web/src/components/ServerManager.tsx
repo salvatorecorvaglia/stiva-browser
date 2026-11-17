@@ -129,16 +129,24 @@ export function ServerManager({
               key={server.id}
               className={`saved-server ${editing === server.id ? "active" : ""}`}
             >
-              <button type="button" disabled={working} onClick={() => choose(server)}>
+              <button
+                type="button"
+                disabled={working || server.managed}
+                onClick={() => choose(server)}
+              >
                 <ServerIcon size={17} />
                 <span>
                   <strong>{server.name}</strong>
-                  <small>{server.region}</small>
+                  <small>
+                    {server.managed ? "Managed by configuration · " : ""}
+                    {server.region}
+                  </small>
                 </span>
               </button>
               <button
                 type="button"
                 className="icon-button delete-action"
+                disabled={server.managed}
                 aria-label={`Remove ${server.name}`}
                 onClick={() => setDeleting(server.id)}
               >

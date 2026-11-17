@@ -2,6 +2,7 @@ import { once } from "node:events";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createApp } from "./app.js";
+import { loadManagedServers } from "./managed-servers.js";
 import { Store } from "./store.js";
 
 const directory = path.resolve(process.env.DATA_DIR ?? "./data");
@@ -11,6 +12,7 @@ try {
   if (!Number.isInteger(port) || port < 0 || port > 65535)
     throw new Error("PORT must be an integer between 0 and 65535");
   store = await Store.open(directory, process.env.DB_URI);
+  store.setManaged(await loadManagedServers(process.env.SERVERS_CONFIG_FILE));
   const app = createApp(store, {
     staticDirectory: path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../web"),
   });
@@ -46,7 +48,7 @@ try {
 } catch (error) {
   await store?.close();
   console.error(
-    "Stiva Browser could not initialize its database or encryption key. Check data-directory permissions and restore the matching key if needed.",
+    "Stiva Browser could not initialize storage or managed S3 configuration. Check data-directory permissions, encryption key, SERVERS_CONFIG_FILE and credential files.",
   );
   if (process.env.NODE_ENV !== "production")
     console.error(error instanceof Error ? error.message : "Initialization failed");

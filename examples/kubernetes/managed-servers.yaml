@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: stiva-browser-servers
+data:
+  servers.json: |
+    {"servers":[{"id":"primary","name":"Stiva","endpoint_url":"http://stiva:9000","region":"us-east-1","force_path_style":true,"access_key_file":"/etc/stiva-secrets/access-key","secret_key_file":"/etc/stiva-secrets/secret-key"}]}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: stiva-browser-s3
+type: Opaque
+stringData:
+  access-key: REPLACE_ME
+  secret-key: REPLACE_ME

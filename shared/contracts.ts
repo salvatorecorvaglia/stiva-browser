@@ -16,6 +16,7 @@ export interface DeletionResult {
 }
 
 export interface Server {
+  managed?: boolean;
   id: string;
   revision: string;
   name: string;

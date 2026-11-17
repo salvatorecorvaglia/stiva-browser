@@ -1,0 +1,22 @@
+spec:
+  template:
+    spec:
+      containers:
+        - name: stiva-browser
+          env:
+            - name: SERVERS_CONFIG_FILE
+              value: /etc/stiva-config/servers.json
+          volumeMounts:
+            - name: servers-config
+              mountPath: /etc/stiva-config
+              readOnly: true
+            - name: servers-secrets
+              mountPath: /etc/stiva-secrets
+              readOnly: true
+      volumes:
+        - name: servers-config
+          configMap:
+            name: stiva-browser-servers
+        - name: servers-secrets
+          secret:
+            secretName: stiva-browser-s3

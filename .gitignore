@@ -31,6 +31,13 @@ Thumbs.db
 desktop/runtime/
 desktop/release/
 
+# Local deployment update journal
+.update-state/
+
+# Python operations helpers
+__pycache__/
+*.pyc
+
 # AI Tools & Agents
 .openai/
 .chatgpt/
@@ -53,10 +60,3 @@ claude-settings.json
 .windsurf/
 .cline/
 CLAUDE.md
-
-# Local deployment update journal
-.update-state/
-
-# Python operations helpers
-__pycache__/
-*.pyc
