@@ -154,14 +154,16 @@ test("multipart part failure, cancellation, and cleanup failure are accounted fo
 test("multipart success preserves part ordering and content; lengths and part sizes are bounded", async () => {
   const data = Buffer.alloc(17 * 1024 ** 2, "s");
   const parts: Buffer[] = [];
-  const client = clientFor(({ name, input }) => {
-    if (name === "CreateMultipartUploadCommand") return { UploadId: "fixture" };
-    if (name === "UploadPartCommand") {
+  const client = clientFor((call) => {
+    if (call.name === "CreateMultipartUploadCommand") return { UploadId: "fixture" };
+    if (call.name === "UploadPartCommand") {
+      const { input } = call;
       assert.ok(input.Body instanceof Uint8Array);
       parts[required(input.PartNumber) - 1] = Buffer.from(input.Body);
       return { ETag: `part-${input.PartNumber}` };
     }
-    assert.equal(name, "CompleteMultipartUploadCommand");
+    assert.equal(call.name, "CompleteMultipartUploadCommand");
+    const { input } = call;
     assert.deepEqual(
       required(input.MultipartUpload?.Parts).map((part) => part.PartNumber),
       [1, 2, 3],
@@ -307,8 +309,9 @@ test("admission rejects excess work without queueing and releases failed operati
 test("bucket listing explicitly paginates and rejects repeated tokens", async (t) => {
   let repeat = false;
   const { app, saved } = await fixture(t, () =>
-    clientFor(({ name, input }) => {
-      assert.equal(name, "ListBucketsCommand");
+    clientFor((call) => {
+      assert.equal(call.name, "ListBucketsCommand");
+      const { input } = call;
       assert.equal(input.MaxBuckets, 1000);
       return {
         Buckets: [{ Name: input.ContinuationToken ? "second" : "first" }],
