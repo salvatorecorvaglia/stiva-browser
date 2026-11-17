@@ -69,36 +69,6 @@ test("builds a release asset URL that cannot escape the release path", () => {
   assert.ok(releaseAssetUrl("1.2.0", "../evil").includes("..%2Fevil"));
 });
 
-test("detects Homebrew installs only for bundles in an Applications folder", () => {
-  const caskroom = "/opt/homebrew/Caskroom";
-  const base = {
-    platform: "darwin",
-    home: "/Users/example",
-    exists: (file) => file === `${caskroom}/stiva-browser`,
-  };
-  assert.deepEqual(
-    detectPackageManager({
-      ...base,
-      bundlePath: "/Applications/Stiva Browser.app",
-    }),
-    { kind: "homebrew", command: "brew upgrade --cask stiva-browser" },
-  );
-  assert.equal(
-    detectPackageManager({
-      ...base,
-      bundlePath: "/Users/example/Downloads/Stiva Browser.app",
-    }),
-    null,
-  );
-  assert.deepEqual(
-    detectPackageManager({
-      ...base,
-      bundlePath: "/opt/homebrew/Caskroom/stiva-browser/1.1.0/Stiva Browser.app",
-    }),
-    { kind: "homebrew", command: "brew upgrade --cask stiva-browser" },
-  );
-});
-
 test("detects Scoop installs from the executable path", () => {
   assert.deepEqual(
     detectPackageManager({
@@ -136,19 +106,6 @@ test("resolves the install route for every platform and package manager", () => 
     mode: "manual",
     reason: "development",
   });
-  assert.deepEqual(
-    decideUpdateMode({
-      ...base,
-      platform: "darwin",
-      packageManager: { kind: "homebrew", command: "brew upgrade --cask stiva-browser" },
-    }),
-    {
-      mode: "manual",
-      reason: "package-manager",
-      packageManager: "homebrew",
-      command: "brew upgrade --cask stiva-browser",
-    },
-  );
   assert.deepEqual(
     decideUpdateMode({
       ...base,

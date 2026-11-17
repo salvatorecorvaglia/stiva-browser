@@ -10,14 +10,6 @@
 
 ---
 
-## Homebrew
-
-Stable releases are distributed through the personal tap:
-
-```sh
-brew install --cask salvatorecorvaglia/tap/stiva-browser
-```
-
 ## Desktop app
 
 Install development dependencies for both runtimes, then start the desktop app:

@@ -337,13 +337,3 @@ jobs:
           RESULTS: ${{ toJSON(needs.*.result) }}
         run: |
           node -e 'if (!JSON.parse(process.env.RESULTS).every(result => result === "success")) process.exit(1)'
-
-  homebrew-tests:
-    name: Homebrew manifest contracts
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          persist-credentials: false
-      - run: python3 -m unittest discover -s tests/homebrew -v

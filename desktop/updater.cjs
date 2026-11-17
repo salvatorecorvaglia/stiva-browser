@@ -1,8 +1,6 @@
 const { execFile } = require("node:child_process");
 const fs = require("node:fs");
-const os = require("node:os");
 const path = require("node:path");
-const { posix } = require("node:path");
 const { promisify } = require("node:util");
 const {
   applyStagedUpdate,
@@ -30,7 +28,7 @@ const execFileAsync = promisify(execFile);
  *    Developer ID. electron-updater drives the platform installer.
  *  - `self`     — unsigned macOS builds. Squirrel rejects those bundles, so
  *    `mac-self-update.cjs` swaps the app in place.
- *  - `manual`   — Homebrew/Scoop/deb installs (the package manager owns the
+ *  - `manual`   — Scoop/deb installs (the package manager owns the
  *    files) and macOS bundles this user cannot write. Stiva Browser still checks the
  *    feed and says a version exists, but sends the user to their package
  *    manager or GitHub instead of fighting it.
@@ -110,49 +108,14 @@ function setState(patch) {
 /**
  * Detects an install owned by a package manager.
  *
- * These must not be updated in place: Homebrew and Scoop keep their own
- * metadata and would reinstall the old version on the next `upgrade`/`update`.
- * The checks are deliberately narrow — a Scoop path, or a cask receipt plus a
- * bundle in an Applications folder — so a normal drag-installed app is not
- * mistaken for a managed one.
+ * These must not be updated in place: Scoop keeps its own metadata and would
+ * reinstall the old version on the next `update`. The check is deliberately
+ * narrow — a Scoop install path — so a normal build is not mistaken for a
+ * managed one.
  */
-function detectPackageManager({
-  platform = process.platform,
-  execPath = process.execPath,
-  bundlePath = getBundlePath(platform, execPath),
-  exists = fs.existsSync,
-  home = os.homedir(),
-} = {}) {
-  if (platform === "win32") {
-    if (/[\\/]scoop[\\/]apps[\\/]stiva-browser[\\/]/i.test(execPath)) {
-      return { kind: "scoop", command: "scoop update stiva-browser" };
-    }
-    return null;
-  }
-
-  if (platform === "darwin" && bundlePath) {
-    const inApplications =
-      bundlePath.startsWith("/Applications/") ||
-      bundlePath.startsWith(`${posix.join(home, "Applications")}/`);
-
-    const prefixes = [
-      process.env.HOMEBREW_PREFIX && posix.join(process.env.HOMEBREW_PREFIX, "Caskroom"),
-      "/opt/homebrew/Caskroom",
-      "/usr/local/Caskroom",
-    ].filter(Boolean);
-    // The bundle normally lives in /Applications and is tracked by a Caskroom
-    // receipt. Some setups launch it from the receipt itself; both are managed.
-    const inCaskroom = prefixes.some(
-      (prefix) =>
-        bundlePath === posix.join(prefix, "stiva-browser") ||
-        bundlePath.startsWith(`${posix.join(prefix, "stiva-browser")}/`),
-    );
-    if (
-      inCaskroom ||
-      (inApplications && prefixes.some((prefix) => exists(posix.join(prefix, "stiva-browser"))))
-    ) {
-      return { kind: "homebrew", command: "brew upgrade --cask stiva-browser" };
-    }
+function detectPackageManager({ platform = process.platform, execPath = process.execPath } = {}) {
+  if (platform === "win32" && /[\\/]scoop[\\/]apps[\\/]stiva-browser[\\/]/i.test(execPath)) {
+    return { kind: "scoop", command: "scoop update stiva-browser" };
   }
 
   return null;
@@ -290,7 +253,7 @@ async function refreshMode() {
 function manualMessage() {
   if (state.reason === "package-manager") {
     return state.command
-      ? `This copy is installed with ${state.packageManager === "homebrew" ? "Homebrew" : "Scoop"}. Update it with: ${state.command}`
+      ? `This copy is installed with ${state.packageManager === "scoop" ? "Scoop" : "a package manager"}. Update it with: ${state.command}`
       : "This copy is managed by a package manager. Update it with your package manager.";
   }
   return MANUAL_MESSAGES[state.reason] ?? "Download the latest version from GitHub.";
@@ -377,7 +340,7 @@ function initAutoUpdater({ onState } = {}) {
       files: Array.isArray(info.files) ? info.files : [],
     };
     // Resolve the mode before publishing "available": the UI must not offer a
-    // Download button for a Homebrew install and take it away a moment later.
+    // Download button for a package-manager install and take it away a moment later.
     void refreshMode()
       .catch((err) => {
         console.error("[Updater] Could not resolve the update mode:", err.message);

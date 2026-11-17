@@ -9,7 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Add stable-release Homebrew cask generation with SHA-256 checksums, CI validation, release attachments, and optional publication to the personal tap; document installation and release maintenance.
 - Add declarative S3 server configuration through `SERVERS_CONFIG_FILE`, with credentials loaded from separate files for Kubernetes ConfigMap/Secret mounts or Docker volumes.
 - Keep managed servers read-only in the UI and API alongside user-created connections; apply configuration changes, credential rotation, and connection removal on restart without modifying S3 objects.
 - Add Kubernetes configuration examples and reject invalid managed configuration at startup with redacted errors.
