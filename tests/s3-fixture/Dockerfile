@@ -6,7 +6,7 @@ WORKDIR /src
 RUN CGO_ENABLED=0 go build -trimpath -o /out/minio .
 RUN test "$(git rev-parse HEAD)" = "9e49d5e7a648f00e26f2246f4dc28e6b07f8c84a"
 
-FROM alpine:3.22@sha256:2e0b81d60597f449baa56dc25d355367869d2dca4cd57e866f1e2b52af3eb55f
+FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf
 RUN apk add --no-cache ca-certificates
 COPY --from=build /out/minio /usr/local/bin/minio
 USER 1000:1000
