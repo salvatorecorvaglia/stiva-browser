@@ -12,10 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add declarative S3 server configuration through `SERVERS_CONFIG_FILE`, with credentials loaded from separate files for Kubernetes ConfigMap/Secret mounts or Docker volumes.
 - Keep managed servers read-only in the UI and API alongside user-created connections; apply configuration changes, credential rotation, and connection removal on restart without modifying S3 objects.
 - Add Kubernetes configuration examples and reject invalid managed configuration at startup with redacted errors.
+- Add Linux ARM64 desktop builds and a separate `latest-linux-arm64.yml` update feed for ARM64 AppImage updates.
 
 ### Changed
 
-- Update application and desktop dependencies, including AWS SDK `3.1170.0`, better-sqlite3 `13.2.0`, Electron `45.3.3`, express-rate-limit `8.7.4`, and Lucide `1.74.0`.
+- Update application and desktop dependencies, including AWS SDK `3.1171.0`, better-sqlite3 `13.2.0`, Electron `45.3.4`, express-rate-limit `8.7.4`, and Lucide `1.75.0`.
 - Upgrade TypeScript to `7.0.2` and refresh frontend tooling, including Vite `8.3.8`, Tailwind CSS `4.3.5`, and Biome `2.6.8`, along with application and desktop lockfiles.
 - Align the pinned Playwright dependency, CI browser image, and local browser test image at `1.65.1`.
 

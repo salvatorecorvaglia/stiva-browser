@@ -54,8 +54,8 @@ const MANUAL_MESSAGES = {
   development: "Updates are available only in packaged builds.",
 };
 
-/** How long after launch the silent check runs. */
-const STARTUP_CHECK_DELAY_MS = 5000;
+/** How long after launch the single silent check runs. */
+const STARTUP_UPDATE_CHECK_DELAY_MS = 5_000;
 
 const state = {
   status: "idle",
@@ -83,6 +83,24 @@ let selfInstallInFlight = false;
 let pendingUpdate = null;
 let squirrelDownloaded = false;
 let autoInstallSupport = null;
+
+/**
+ * Startup update-check policy, shared by every desktop app.
+ *
+ * One silent check, five seconds after startup. The callback owns its failure
+ * handling; `disabled` is the `<APP>_DISABLE_UPDATE_CHECK` opt-out.
+ */
+function scheduleStartupUpdateCheck(check, { disabled = false } = {}) {
+  if (disabled) return () => {};
+
+  const timer = setTimeout(() => {
+    void check();
+  }, STARTUP_UPDATE_CHECK_DELAY_MS);
+
+  if (typeof timer.unref === "function") timer.unref();
+
+  return () => clearTimeout(timer);
+}
 
 function electron() {
   return require("electron");
@@ -415,12 +433,9 @@ function initAutoUpdater({ onState } = {}) {
     }
   });
 
-  if (process.env.STIVA_DISABLE_UPDATE_CHECK !== "1") {
-    const timer = setTimeout(() => {
-      void checkForUpdate({ manual: false });
-    }, STARTUP_CHECK_DELAY_MS);
-    if (typeof timer.unref === "function") timer.unref();
-  }
+  scheduleStartupUpdateCheck(() => checkForUpdate({ manual: false }), {
+    disabled: process.env.STIVA_DISABLE_UPDATE_CHECK === "1",
+  });
 }
 
 function getUpdateState() {

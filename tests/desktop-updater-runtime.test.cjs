@@ -17,6 +17,7 @@ function fixture({ packaged = true, disable = "1" } = {}) {
   engine.quitAndInstall = () => actions.push("restart");
   const states = [];
   const timers = [];
+  let unrefs = 0;
   const app = { isPackaged: packaged, getVersion: () => "1.2.0" };
   const module = { exports: {} };
   let imports = 0;
@@ -28,9 +29,13 @@ function fixture({ packaged = true, disable = "1" } = {}) {
       env: { STIVA_DISABLE_UPDATE_CHECK: disable },
     },
     console: { error() {} },
-    setTimeout: (callback) => {
-      timers.push(callback);
-      return { unref() {} };
+    setTimeout: (callback, delay) => {
+      timers.push({ callback, delay });
+      return {
+        unref() {
+          unrefs += 1;
+        },
+      };
     },
     require(name) {
       if (name === "electron") return { app };
@@ -48,7 +53,15 @@ function fixture({ packaged = true, disable = "1" } = {}) {
   });
   const updater = module.exports;
   updater.initAutoUpdater({ onState: (state) => states.push(state) });
-  return { updater, engine, states, actions, timers, imported: () => imports };
+  return {
+    updater,
+    engine,
+    states,
+    actions,
+    timers,
+    imported: () => imports,
+    unrefs: () => unrefs,
+  };
 }
 
 test("development never loads electron-updater or schedules a network check", async () => {
@@ -62,12 +75,14 @@ test("development never loads electron-updater or schedules a network check", as
 test("startup schedules a check but never downloads without a user action", async () => {
   const f = fixture({ disable: "0" });
   assert.equal(f.timers.length, 1);
+  assert.equal(f.timers[0].delay, 5000);
+  assert.equal(f.unrefs(), 1);
   assert.equal(f.engine.autoDownload, false);
   assert.equal(f.engine.allowDowngrade, false);
   assert.equal(f.engine.allowPrerelease, false);
   f.engine.checkForUpdates = async () =>
     f.engine.emit("update-available", { version: "1.3.0", files: [] });
-  f.timers[0]();
+  f.timers[0].callback();
   await tick();
   assert.equal(f.updater.getUpdateState().status, "available");
   assert.deepEqual(f.actions, []);
@@ -76,6 +91,11 @@ test("startup schedules a check but never downloads without a user action", asyn
   assert.deepEqual(f.actions, ["download"]);
   await f.updater.installUpdate();
   assert.deepEqual(f.actions, ["download", "restart"]);
+});
+
+test("STIVA_DISABLE_UPDATE_CHECK skips the startup check", () => {
+  const f = fixture();
+  assert.equal(f.timers.length, 0);
 });
 
 test("offline startup is quiet; manual checks report failure and can retry", async () => {
