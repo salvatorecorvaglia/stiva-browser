@@ -160,7 +160,7 @@ jobs:
       - run: pnpm test:browser
       - name: Upload browser failure artifacts
         if: failure()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: browser-test-results
           path: test-results/
@@ -228,7 +228,7 @@ jobs:
         run: pnpm test:staging
       - name: Upload staging measurements
         if: always() && !inputs.release
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: staging-report
           path: test-results/staging-report.json
@@ -243,7 +243,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/verified-image"
           docker save "$TESTED_IMAGE" | gzip -1 > "$RUNNER_TEMP/verified-image/image.tar.gz"
           node scripts/verified-image.mjs record "$RUNNER_TEMP/verified-image" amd64 "$TESTED_IMAGE"
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: startsWith(github.ref, 'refs/tags/v')
         with:
           name: verified-image-amd64
@@ -324,7 +324,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/verified-image"
           docker save "$TESTED_IMAGE" | gzip -1 > "$RUNNER_TEMP/verified-image/image.tar.gz"
           node scripts/verified-image.mjs record "$RUNNER_TEMP/verified-image" arm64 "$TESTED_IMAGE"
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: startsWith(github.ref, 'refs/tags/v')
         with:
           name: verified-image-arm64
