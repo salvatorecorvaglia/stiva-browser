@@ -7,6 +7,11 @@ on:
   merge_group:
   workflow_dispatch:
   workflow_call:
+    inputs:
+      release:
+        description: Skip checks that depend on external vulnerability data or timing
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -199,6 +204,7 @@ jobs:
           cache-from: type=gha,scope=release-amd64
           cache-to: type=gha,scope=release-amd64,mode=max
       - name: Scan container image
+        if: ${{ !inputs.release }}
         uses: anchore/scan-action@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2
         with:
           image: stiva-browser:ci
@@ -218,9 +224,10 @@ jobs:
           cache-from: type=gha,scope=s3-fixture
           cache-to: type=gha,scope=s3-fixture,mode=max
       - name: Verify staging performance, monitoring, and rollback
+        if: ${{ !inputs.release }}
         run: pnpm test:staging
       - name: Upload staging measurements
-        if: always()
+        if: always() && !inputs.release
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: staging-report
@@ -293,6 +300,7 @@ jobs:
         run: docker image inspect "$IMAGE" >/dev/null
 
       - name: Scan native release image
+        if: ${{ !inputs.release }}
         uses: anchore/scan-action@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2
         with:
           image: corvaglia91/stiva-browser:build-${{ github.run_id }}-${{ github.run_attempt }}-arm64

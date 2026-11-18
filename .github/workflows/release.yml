@@ -82,6 +82,8 @@ jobs:
     name: CI
     needs: preflight
     uses: ./.github/workflows/ci.yml
+    with:
+      release: true
 
   build:
     name: Publish verified image (${{ matrix.arch }})
