@@ -10,6 +10,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: desktop-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
 jobs:
   build:
     name: Desktop (${{ matrix.os }}, ${{ matrix.arch }})
@@ -92,6 +96,7 @@ jobs:
           STIVA_DESKTOP_EXECUTABLE: ${{ matrix.executable }}
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
+          compression-level: 0
           name: desktop-${{ runner.os }}-${{ matrix.arch }}
           path: |
             desktop/release/*.dmg
