@@ -205,7 +205,7 @@ jobs:
           cache-to: type=gha,scope=release-amd64,mode=max
       - name: Scan container image
         if: ${{ !inputs.release }}
-        uses: anchore/scan-action@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2
+        uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439
         with:
           image: stiva-browser:ci
           fail-build: true
@@ -301,7 +301,7 @@ jobs:
 
       - name: Scan native release image
         if: ${{ !inputs.release }}
-        uses: anchore/scan-action@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2
+        uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439
         with:
           image: corvaglia91/stiva-browser:build-${{ github.run_id }}-${{ github.run_attempt }}-arm64
           fail-build: true
