@@ -13,8 +13,11 @@ export async function writeUpdateManifests(directory, version) {
   const targets = {
     "latest-mac.yml": [`mac_arm64.zip`, `mac_x64.zip`],
     "latest.yml": [`win_x64.exe`],
-    // electron-builder expands ${arch} to x86_64 for AppImage targets.
+    // electron-builder expands ${arch} to x86_64 for x64 AppImage targets.
+    // Linux arm64 uses the separate latest-linux-arm64.yml channel that
+    // electron-updater selects on arm64 hosts.
     "latest-linux.yml": [`linux_x86_64.AppImage`],
+    "latest-linux-arm64.yml": [`linux_arm64.AppImage`],
   };
   const manifests = [];
   for (const [name, suffixes] of Object.entries(targets)) {
