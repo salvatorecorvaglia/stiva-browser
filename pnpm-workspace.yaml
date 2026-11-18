@@ -1,6 +1,12 @@
 # Preserve npm-compatible version resolution when importing the existing lockfile.
 minimumReleaseAge: 0
 
+# Withdrawn on 2026-11-18; npm's audit feed still reports this advisory.
+# https://github.com/advisories/GHSA-fc5q-39xc-vjpf
+auditConfig:
+  ignoreGhsas:
+    - GHSA-fc5q-39xc-vjpf
+
 allowBuilds:
   better-sqlite3: true
   esbuild: true

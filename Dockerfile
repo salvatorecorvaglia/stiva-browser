@@ -1,6 +1,6 @@
 FROM node:26-alpine AS dependencies
 WORKDIR /app
-RUN corepack enable
+RUN npm install --global pnpm@12.16.1
 RUN apk add --no-cache python3 make g++
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile

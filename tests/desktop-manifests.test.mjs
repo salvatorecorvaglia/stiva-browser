@@ -24,7 +24,12 @@ async function fixtures(t) {
 test("release feeds contain both Mac architectures and actual artifact hashes and sizes", async (t) => {
   const directory = await fixtures(t);
   await writeUpdateManifests(directory, "1.3.0");
-  for (const name of ["latest-mac.yml", "latest.yml", "latest-linux.yml", "latest-linux-arm64.yml"]) {
+  for (const name of [
+    "latest-mac.yml",
+    "latest.yml",
+    "latest-linux.yml",
+    "latest-linux-arm64.yml",
+  ]) {
     const feed = JSON.parse(await readFile(path.join(directory, name), "utf8"));
     assert.equal(feed.version, "1.3.0");
     assert.equal(feed.files.length, name === "latest-mac.yml" ? 2 : 1);

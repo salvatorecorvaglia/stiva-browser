@@ -1,6 +1,12 @@
 # Match the root project's release-age policy for the shared dependencies.
 minimumReleaseAge: 0
 
+# Withdrawn on 2026-11-18; npm's audit feed still reports this advisory.
+# https://github.com/advisories/GHSA-fc5q-39xc-vjpf
+auditConfig:
+  ignoreGhsas:
+    - GHSA-fc5q-39xc-vjpf
+
 # Native modules are rebuilt for Electron after the explicit install step.
 verifyDepsBeforeRun: false
 nodeLinker: hoisted
