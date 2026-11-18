@@ -1,4 +1,4 @@
-FROM node:24-alpine AS dependencies
+FROM node:26-alpine AS dependencies
 WORKDIR /app
 RUN corepack enable
 RUN apk add --no-cache python3 make g++
@@ -16,7 +16,7 @@ COPY playwright.config.ts ./
 RUN pnpm typecheck && pnpm build
 RUN pnpm prune --prod
 
-FROM node:24-alpine AS runtime
+FROM node:26-alpine AS runtime
 ENV NODE_ENV=production PORT=3000 DATA_DIR=/data
 WORKDIR /app
 # Refresh inherited OS packages and require the patched zlib release.
