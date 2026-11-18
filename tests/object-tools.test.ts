@@ -245,6 +245,55 @@ test("version history returns markers, preserves pagination, and scopes exact ke
     .expect(200);
 });
 
+test("deleted view excludes historical markers and live objects while retaining empty-page pagination", async (t) => {
+  const { app, id, calls } = await fixture(t, ({ name, input }) => {
+    assert.equal(name, "ListObjectVersionsCommand");
+    return {
+      Versions: [{ Key: "folder/live", VersionId: "live", IsLatest: true }],
+      DeleteMarkers: [
+        { Key: "folder/live", VersionId: "old-marker", IsLatest: false },
+        ...(input.KeyMarker
+          ? [{ Key: "folder/nested/deleted", VersionId: "deleted", IsLatest: true }]
+          : []),
+      ],
+      IsTruncated: !input.KeyMarker,
+      NextKeyMarker: "folder/live",
+      NextVersionIdMarker: "old-marker",
+    };
+  });
+  const first = await request(app)
+    .get("/api/buckets/data/versions")
+    .query({ prefix: "folder/", deleted: "true" })
+    .set("x-s3-server-id", id)
+    .expect(200);
+  assert.deepEqual(first.body.versions, []);
+  assert.equal(first.body.next_key_marker, "folder/live");
+  assert.equal(first.body.next_version_id_marker, "old-marker");
+  const second = await request(app)
+    .get("/api/buckets/data/versions")
+    .query({
+      prefix: "folder/",
+      deleted: "true",
+      keyMarker: first.body.next_key_marker,
+      versionIdMarker: first.body.next_version_id_marker,
+    })
+    .set("x-s3-server-id", id)
+    .expect(200);
+  assert.deepEqual(
+    second.body.versions.map((item: { key: string }) => item.key),
+    ["folder/nested/deleted"],
+  );
+  assert.equal(second.body.next_key_marker, null);
+  const continued = required(calls[1]);
+  assert.equal(continued.name, "ListObjectVersionsCommand");
+  assert.equal(continued.input.Prefix, "folder/");
+  await request(app)
+    .get("/api/buckets/data/versions")
+    .query({ deleted: "invalid" })
+    .set("x-s3-server-id", id)
+    .expect(400);
+});
+
 test("version delete requires exact confirmation, restore copies the selected version, and reads retain versionId", async (t) => {
   const { app, id, calls } = await fixture(t, ({ name }) => {
     if (name === "HeadObjectCommand")

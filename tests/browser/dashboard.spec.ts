@@ -360,7 +360,14 @@ test("version history restores data and permanently removes a marker with typed 
   ];
   await page.route("**/api/buckets/project-assets/versions?*", (route) =>
     route.fulfill({
-      json: { versions, next_key_marker: null, next_version_id_marker: null },
+      json: {
+        versions:
+          new URL(route.request().url()).searchParams.get("deleted") === "true"
+            ? versions.filter((version) => version.is_delete_marker && version.is_latest)
+            : versions,
+        next_key_marker: null,
+        next_version_id_marker: null,
+      },
     }),
   );
   let restored = false;
@@ -400,7 +407,14 @@ test("version history restores data and permanently removes a marker with typed 
     .getByRole("navigation", { name: "Buckets" })
     .getByRole("button", { name: "project-assets" })
     .click();
-  await page.getByRole("button", { name: "Versions", exact: true }).click();
+  await page.getByRole("button", { name: "View deleted items", exact: true }).click();
+  const deletedDialog = page.getByRole("dialog", { name: "Deleted items", exact: true });
+  await expect(deletedDialog.getByLabel("View deleted items")).toBeChecked();
+  await expect(deletedDialog.getByText("Delete marker", { exact: true })).toBeVisible();
+  await expect(
+    deletedDialog.getByRole("link", { name: "Download version v1", exact: true }),
+  ).toHaveCount(0);
+  await deletedDialog.getByRole("button", { name: "Choose version to restore" }).click();
   const dialog = page.getByRole("dialog", { name: "Object versions" });
   await expect(dialog.getByText("Delete marker", { exact: true })).toBeVisible();
   await expect(

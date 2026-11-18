@@ -24,6 +24,7 @@ export function VersionsModal({
   bucket,
   prefix,
   objectKey,
+  deleted = false,
   onClose,
   onChange,
 }: {
@@ -31,9 +32,11 @@ export function VersionsModal({
   bucket: string;
   prefix: string;
   objectKey?: string;
+  deleted?: boolean;
   onClose: () => void;
   onChange: () => void;
 }) {
+  const [showDeleted, setShowDeleted] = useState(deleted);
   const [keyInput, setKeyInput] = useState(objectKey ?? "");
   const [exactKey, setExactKey] = useState(objectKey ?? "");
   const [versions, setVersions] = useState<ObjectVersion[]>([]);
@@ -61,6 +64,7 @@ export function VersionsModal({
         setNext(null);
       }
       const query = new URLSearchParams(exactKey ? { key: exactKey } : { prefix });
+      if (showDeleted) query.set("deleted", "true");
       if (marker) {
         query.set("keyMarker", marker.key);
         if (marker.version) query.set("versionIdMarker", marker.version);
@@ -102,7 +106,7 @@ export function VersionsModal({
         if (!controller.signal.aborted) setLoading(false);
       }
     },
-    [serverId, bucket, prefix, exactKey],
+    [serverId, bucket, prefix, exactKey, showDeleted],
   );
   // biome-ignore lint/correctness/useExhaustiveDependencies: revision reloads history after writes.
   useEffect(() => {
@@ -148,13 +152,22 @@ export function VersionsModal({
   return (
     <Dialog
       wide
-      title="Object versions"
+      title={showDeleted ? "Deleted items" : "Object versions"}
       subtitle={`${bucket} / ${exactKey || prefix || "all objects"}`}
       onClose={() => {
         if (!working) onClose();
       }}
     >
       <div className="versions-body">
+        <label>
+          <input
+            type="checkbox"
+            checked={showDeleted}
+            disabled={working}
+            onChange={(event) => setShowDeleted(event.target.checked)}
+          />{" "}
+          View deleted items
+        </label>
         <form
           className="version-search"
           onSubmit={(event) => {
@@ -178,6 +191,8 @@ export function VersionsModal({
           </button>
         </form>
         <p className="muted version-explanation">
+          {showDeleted &&
+            "Shows objects whose current version is a delete marker, including deleted files in subfolders. Choose a previous version to restore; recovery requires a retained data version. Empty pages may have more results. "}
           Includes delete markers and objects hidden from the regular listing. Restore creates a new
           current version; deleting a version or marker is permanent. Your S3 account needs
           version-listing permissions.
@@ -283,6 +298,21 @@ export function VersionsModal({
                   <td>{date(version.last_modified)}</td>
                   <td>
                     <div className="row-actions">
+                      {showDeleted && version.is_delete_marker && version.is_latest && (
+                        <button
+                          type="button"
+                          className="button secondary"
+                          disabled={working}
+                          onClick={() => {
+                            setKeyInput(version.key);
+                            setExactKey(version.key);
+                            setShowDeleted(false);
+                          }}
+                        >
+                          <RotateCcw size={15} />
+                          Choose version to restore
+                        </button>
+                      )}
                       {!version.is_delete_marker && (
                         <>
                           <a
@@ -340,10 +370,16 @@ export function VersionsModal({
           </div>
         )}
         {!loading && !versions.length && !error && (
-          <p className="object-tool-status">No versions found for this location.</p>
+          <p className="object-tool-status">
+            {showDeleted
+              ? "No deleted items on this page."
+              : "No versions found for this location."}
+          </p>
         )}
         <div className="version-pagination">
-          <span>{versions.length} versions loaded</span>
+          <span>
+            {versions.length} {showDeleted ? "deleted items" : "versions"} loaded
+          </span>
           <button
             type="button"
             className="button secondary"

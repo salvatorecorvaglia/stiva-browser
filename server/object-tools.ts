@@ -160,6 +160,7 @@ export function registerObjectTools(
     const input = z
       .object({
         prefix: z.string().default(""),
+        deleted: z.enum(["true", "false"]).default("false"),
         key: key.optional(),
         keyMarker: z.string().optional(),
         versionIdMarker: versionId.optional(),
@@ -224,7 +225,10 @@ export function registerObjectTools(
     )
       throw new HttpError(502, "Storage repeated a version pagination marker");
     res.json({
-      versions,
+      versions:
+        input.deleted === "true"
+          ? versions.filter((item) => item.is_delete_marker && item.is_latest)
+          : versions,
       next_key_marker: more ? result.NextKeyMarker : null,
       next_version_id_marker: more ? (result.NextVersionIdMarker ?? null) : null,
     });

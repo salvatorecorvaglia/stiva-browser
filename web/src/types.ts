@@ -2,7 +2,7 @@ import type { S3Object, Signed } from "./api";
 export type WorkspaceModal =
   | { type: "folder" }
   | { type: "folder-delete"; prefix: string }
-  | { type: "versions"; key?: string }
+  | { type: "versions"; key?: string; deleted?: boolean }
   | { type: "delete"; keys: string[] }
   | { type: "deletion-result"; deleted: number; errors: string[] }
   | { type: "inspect"; object: S3Object; preview: boolean }

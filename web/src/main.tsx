@@ -426,6 +426,14 @@ function App() {
                     <History size={15} />
                     <span>Versions</span>
                   </button>
+                  <button
+                    type="button"
+                    className="button secondary"
+                    onClick={() => setModal({ type: "versions", deleted: true })}
+                  >
+                    <Trash2 size={15} />
+                    <span>View deleted items</span>
+                  </button>
                   {selected.size > 0 && (
                     <button
                       type="button"
@@ -625,6 +633,7 @@ function App() {
           bucket={bucket}
           prefix={prefix}
           objectKey={modal.key}
+          deleted={modal.deleted}
           onClose={closeModal}
           onChange={refresh}
         />
