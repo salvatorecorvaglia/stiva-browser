@@ -15,12 +15,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Keep managed servers read-only in the UI and API alongside user-created connections; apply configuration changes, credential rotation, and connection removal on restart without modifying S3 objects.
 - Add Kubernetes configuration examples and reject invalid managed configuration at startup with redacted errors.
 - Add Linux ARM64 desktop builds and a separate `latest-linux-arm64.yml` update feed for ARM64 AppImage updates.
+- Display the application version in the footer with a responsive layout.
 
 ### Changed
 
 - Update application and desktop dependencies, including AWS SDK `3.1171.0`, better-sqlite3 `13.2.0`, Electron `45.3.4`, express-rate-limit `8.7.4`, and Lucide `1.75.0`.
 - Upgrade TypeScript to `7.0.2` and refresh frontend tooling, including Vite `8.3.8`, Tailwind CSS `4.3.5`, and Biome `2.6.8`, along with application and desktop lockfiles.
 - Align the pinned Playwright dependency, CI browser image, and local browser test image at `1.65.1`.
+- Install pinned pnpm `12.16.1` explicitly in the container build.
+- Refresh pinned CI actions and exclude withdrawn advisory `GHSA-fc5q-39xc-vjpf` from application and desktop dependency audits.
 
 ### Fixed
 
@@ -32,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - Upgrade inherited Alpine runtime packages and require zlib `1.4-r0` or newer in the container image.
+- Require container OpenSSL libraries `libcrypto3` and `libssl3` at `3.5.9-r1` or newer.
 
 ## [1.3.0] - 2026-11-01
 
