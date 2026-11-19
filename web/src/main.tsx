@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { version } from "../../package.json";
 import {
   api,
   bucketPath,
@@ -570,6 +571,7 @@ function App() {
           <span>
             STIVA BROWSER <span> / </span> YOUR STORAGE, SIMPLIFIED
           </span>
+          <span className="project-version">Stiva Browser {version}</span>
           <span>
             <ShieldCheck size={13} />
             Database-backed. Credentials encrypted.
