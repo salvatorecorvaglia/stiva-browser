@@ -82,7 +82,7 @@ The image runs as UID 1000 and serves on port 3000. For bind mounts, pre-create 
 
 ## Kubernetes
 
-The deployment uses `corvaglia91/stiva-browser`; you can also use the corresponding GHCR image. Change the ingress hostname and attach your existing authentication middleware and HTTPS configuration. Then:
+The deployment uses `corvaglia91/stiva-browser`. Change the ingress hostname and attach your existing authentication middleware and HTTPS configuration. Then:
 
 ```sh
 kubectl apply -f k8s/

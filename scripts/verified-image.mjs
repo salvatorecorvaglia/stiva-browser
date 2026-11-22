@@ -53,10 +53,10 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     )[0];
     if (actual.Id !== metadata.id || actual.Architecture !== arch || actual.Os !== "linux")
       throw new Error("Loaded image differs from the tested image");
-    for (const image of ["corvaglia91/stiva-browser", process.env.GHCR_IMAGE]) {
-      execFileSync("docker", ["tag", metadata.id, `${image}:${process.env.BUILD_TAG}`], {
-        stdio: "inherit",
-      });
-    }
+    execFileSync(
+      "docker",
+      ["tag", metadata.id, `corvaglia91/stiva-browser:${process.env.BUILD_TAG}`],
+      { stdio: "inherit" },
+    );
   } else throw new Error("Expected record or load");
 }

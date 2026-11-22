@@ -18,7 +18,6 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
-      image: ${{ steps.version.outputs.image }}
       prerelease: ${{ steps.version.outputs.prerelease }}
     env:
       RELEASE_TAG: ${{ github.ref_name }}
@@ -43,8 +42,7 @@ jobs:
           if (!match) throw new Error('Expected vMAJOR.MINOR.PATCH or a SemVer prerelease tag.');
           const { version } = JSON.parse(readFileSync('package.json', 'utf8'));
           if (tag !== `v${version}`) throw new Error(`Tag ${tag} must match package.json version ${version}.`);
-          const image = `ghcr.io/${process.env.GITHUB_REPOSITORY.toLowerCase()}`;
-          appendFileSync(process.env.GITHUB_OUTPUT, `image=${image}\nprerelease=${Boolean(match[4])}\n`);
+          appendFileSync(process.env.GITHUB_OUTPUT, `prerelease=${Boolean(match[4])}\n`);
           NODE
 
       - name: Prepare release notes from changelog
@@ -100,7 +98,6 @@ jobs:
     timeout-minutes: 25
     permissions:
       contents: read
-      packages: write
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -119,7 +116,6 @@ jobs:
           path: ${{ runner.temp }}/verified-image
       - name: Verify, load and retag the tested image
         env:
-          GHCR_IMAGE: ${{ needs.preflight.outputs.image }}
           BUILD_TAG: build-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.arch }}
         run: node scripts/verified-image.mjs load "$RUNNER_TEMP/verified-image" "${{ matrix.arch }}"
 
@@ -129,28 +125,17 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Log in to GHCR
-        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ github.token }}
-
       - name: Push tested images and record immutable references
         env:
-          GHCR_IMAGE: ${{ needs.preflight.outputs.image }}
           BUILD_TAG: build-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.arch }}
           ARCH: ${{ matrix.arch }}
         run: |
           mkdir -p "$RUNNER_TEMP/digests"
-          for image in corvaglia91/stiva-browser "$GHCR_IMAGE"; do
-            docker push "$image:$BUILD_TAG"
-            ref=$(docker image inspect "$image:$BUILD_TAG" --format '{{range .RepoDigests}}{{println .}}{{end}}' | awk -v prefix="$image@" 'index($0, prefix) == 1 { print; exit }')
-            test -n "$ref"
-            registry=hub
-            if [[ "$image" == ghcr.io/* ]]; then registry=ghcr; fi
-            echo "$ref" > "$RUNNER_TEMP/digests/$registry-$ARCH.txt"
-          done
+          image=corvaglia91/stiva-browser
+          docker push "$image:$BUILD_TAG"
+          ref=$(docker image inspect "$image:$BUILD_TAG" --format '{{range .RepoDigests}}{{println .}}{{end}}' | awk -v prefix="$image@" 'index($0, prefix) == 1 { print; exit }')
+          test -n "$ref"
+          echo "$ref" > "$RUNNER_TEMP/digests/hub-$ARCH.txt"
 
       - name: Upload tested image references
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
@@ -172,7 +157,6 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: write
-      packages: write
     env:
       RELEASE_TAG: ${{ github.ref_name }}
 
@@ -216,9 +200,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302
         with:
-          images: |
-            corvaglia91/stiva-browser
-            ${{ needs.preflight.outputs.image }}
+          images: corvaglia91/stiva-browser
           flavor: latest=false
           tags: |
             type=semver,pattern={{version}}
@@ -231,22 +213,13 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Log in to GHCR
-        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ github.token }}
-
-      - name: Publish multi-platform images to both registries
+      - name: Publish multi-platform images to Docker Hub
         env:
           IMAGE_TAGS: ${{ steps.meta.outputs.tags }}
         run: |
+          amd64=$(cat "$RUNNER_TEMP/digests/hub-amd64.txt")
+          arm64=$(cat "$RUNNER_TEMP/digests/hub-arm64.txt")
           while IFS= read -r image; do
-            registry=hub
-            if [[ "$image" == ghcr.io/* ]]; then registry=ghcr; fi
-            amd64=$(cat "$RUNNER_TEMP/digests/$registry-amd64.txt")
-            arm64=$(cat "$RUNNER_TEMP/digests/$registry-arm64.txt")
             docker buildx imagetools create --tag "$image" "$amd64" "$arm64"
           done <<< "$IMAGE_TAGS"
 
