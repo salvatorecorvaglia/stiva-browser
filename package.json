@@ -4,7 +4,7 @@
   "description": "A shared internal dashboard for AWS S3, MinIO, and other S3-compatible servers",
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@12.16.1",
+  "packageManager": "pnpm@12.23.0",
   "engines": {
     "node": ">=24"
   },
